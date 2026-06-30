@@ -33,25 +33,21 @@ $sjstyle = intval($_GET['sjstyle']);//表示是哪个大商店
 if(empty($sjstyle)){
 	$sjstyle = 1;
 }
-if($sjstyle==1){
-	$sql = "SELECT id,name,yb,vary,stime,varyname,timelimit FROM props WHERE yb > 0 AND stime like '$style%' ORDER BY stime";
-	$props = $_pm['mysql']->getRecords($sql);
-}else{
-	$props = '';
-}
 //if($sjstyle==2){
-	$sql = "SELECT id,name,sj,vary,stime,varyname,timelimit FROM props WHERE sj > 0 AND stime like '$style%' ORDER BY stime";
+	$sql = "SELECT id,name,sj,vary,stime,varyname,timelimit FROM props WHERE sj > 0 AND sj < 99999 AND stime like '$style%' ORDER BY stime,id";
 	$sjprops = $_pm['mysql']->getRecords($sql);
 
 
 //if($sjstyle==3)
 
-	$sql = "SELECT id,name,vip,vary,stime,varyname,timelimit FROM props WHERE vip > 0 AND stime like '$style%' ORDER BY stime";
+	$sql = "SELECT id,name,vip,vary,stime,varyname,timelimit FROM props WHERE vip > 0 AND vip < 99999 AND stime like '$style%' ORDER BY stime,id";
 	$vipprops = $_pm['mysql']->getRecords($sql);
 
 
-$sql = "SELECT id,name,yb,vary,stime,varyname,timelimit FROM props WHERE yb > 0 AND stime like '$style%' ORDER BY stime";
+$sql = "SELECT id,name,yb,vary,stime,varyname,timelimit FROM props WHERE yb > 0 AND yb < 99999 AND stime like '$style%' ORDER BY stime,id";
 $props = $_pm['mysql']->getRecords($sql);
+$sparr = $sjsparr = $vipsparr = array();
+$shop = $sjshop = $vipshop = $limitshop = '';
 $bagtype = $_REQUEST['bagtype'];
 $basetype = $_REQUEST['basetype'];
 #########################仓库的物品 9.18 谭炜###########################3
@@ -97,8 +93,7 @@ else
         ##########################在这里结束###############################
         
             if (intval($rs['yb'])<1) continue;
-			$num = substr($rs['stime'],1);
-			$sparr[$num] = $rs;
+			$sparr[] = $rs;
 			//arsort($sparr);
         } /* if statement is added by Zheng.Ping */
     }
@@ -139,8 +134,7 @@ else
 		$i++;
         if ($rs['sj'] != SPECIAL_GOODS) { /* only if statement is added by Zheng.Ping */
             if (intval($rs['sj'])<1) continue;
-			$num = substr($rs['stime'],1);
-			$sjsparr[$num] = $rs;
+			$sjsparr[] = $rs;
 			//arsort($sparr);
         } /* if statement is added by Zheng.Ping */
     }
@@ -182,8 +176,7 @@ else
 		$i++;
         if ($rs['vip'] != SPECIAL_GOODS) { /* only if statement is added by Zheng.Ping */
             if (intval($rs['vip'])<1) continue;
-			$num = substr($rs['stime'],1);
-			$vipsparr[$num] = $rs;
+			$vipsparr[] = $rs;
 			//arsort($sparr);
         } /* if statement is added by Zheng.Ping */
     }
@@ -208,6 +201,8 @@ if(is_array($vipsparr)){
 }else{
 	$vipshop = '暂无您要查找的vip商品！';
 }
+if(empty($sjshop)) $sjshop = '暂无您要查找的水晶商品！';
+if(empty($vipshop)) $vipshop = '暂无您要查找的VIP商品！';
 //vip商城结束
 
 
@@ -299,7 +294,7 @@ if(is_array($tm)){
 		$v = '';
 		foreach($p as $v){
 			$va = explode(':',$v);
-			$sql = 'SELECT id,varyname,name,zhekouyb,timelimit FROM props WHERE zhekouyb > 0 AND stime > 0 AND id = '.$va[0];
+			$sql = 'SELECT id,varyname,name,zhekouyb,timelimit FROM props WHERE zhekouyb > 0 AND zhekouyb < 99999 AND stime > 0 AND LEFT(CAST(stime AS CHAR),1) IN (1,2,3,4) AND id = '.$va[0];
 			$res = $_pm['mysql'] -> getOneRecord($sql);
 			if(!is_array($res)) continue;
 			if(!empty($res['timelimit'])){

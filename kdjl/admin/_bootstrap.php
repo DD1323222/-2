@@ -90,6 +90,35 @@ function adminScheduleState($timelimit)
 	return 'active';
 }
 
+function adminStoredSchedule($timelimit)
+{
+	$timelimit = trim((string)$timelimit);
+	return $timelimit === '0' ? '' : $timelimit;
+}
+
+function adminSalePriceActive($price)
+{
+	$price = intval($price);
+	return $price > 0 && $price < 99999;
+}
+
+function adminOtherActiveChannels($row, $currentChannel, $limitedItems)
+{
+	if (!is_array($row) || adminCategory($row['stime']) === 0) return array();
+	$labels = array('yb' => '神秘商店', 'sj' => '水晶商店', 'vip' => 'VIP商城');
+	$result = array();
+	foreach ($labels as $field => $label)
+	{
+		if ($field !== $currentChannel && adminSalePriceActive($row[$field])) $result[] = $label;
+	}
+	$id = intval($row['id']);
+	if ($currentChannel !== 'limit' && adminSalePriceActive($row['zhekouyb']) && isset($limitedItems[$id]))
+	{
+		$result[] = '抢购商城';
+	}
+	return $result;
+}
+
 function adminCategory($stime)
 {
 	$value = (string)intval($stime);

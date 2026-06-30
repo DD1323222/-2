@@ -52,23 +52,18 @@ if($user === false)
 					   'v' => "if(\$rs['id'] == '{$bid}' && \$rs['yb']>0) \$ret=\$rs;"
 				 ));*/
 $priceField = $buyChannel === 'limit' ? 'zhekouyb' : 'yb';
-$wp = $_pm['mysql'] -> getOneRecord("SELECT * FROM props WHERE id = $bid and {$priceField} > 0");
+$wp = $_pm['mysql'] -> getOneRecord("SELECT * FROM props WHERE id = $bid and {$priceField} > 0 and {$priceField} < 99999 and stime > 0 and LEFT(CAST(stime AS CHAR),1) IN (1,2,3,4)");
 if(!is_array($wp))
 {
 	realseLock();
 	die('3');
 }
-if($wp['stime']<=0)
-	{
-	realseLock();
-	die('don"t be evil.');
-	}
 $isLimitedBuy = false;
 if($buyChannel === 'limit'){
-	$zk = unserialize($_pm['mem']->get('zhekou_'.$wp['id'].'_num'));
+	$zk = 0;
 	
 	$time = date('Y-m-d H:i:s');
-	$sql = 'SELECT value2,contents FROM welcome WHERE code = "timelimitbuy"';
+	$sql = 'SELECT value2,contents FROM welcome WHERE code = "timelimitbuy" FOR UPDATE';
 	$tm = $_pm["mysql"] -> getOneRecord($sql);
 	if(!is_array($tm)){
 		realseLock();
@@ -79,6 +74,7 @@ if($buyChannel === 'limit'){
 		realseLock();
 		die('活动未开启2！');
 	}
+	$zk = intval(@unserialize($_pm['mem']->get('zhekou_'.$wp['id'].'_num')));
 	
 	//if($zk > 0){
 		$pa = explode(',',$tm['contents']);

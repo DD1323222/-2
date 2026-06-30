@@ -36,7 +36,7 @@ if($bid<1 || $n>100)
 /*$wp= $m->dataGet(array('k' => MEM_PROPS_KEY, 
 					   'v' => "if(\$rs['id'] == '{$bid}' && \$rs['yb']>0) \$ret=\$rs;"
 				 ));*/
-$wp = $_pm['mysql'] -> getOneRecord("SELECT * FROM props WHERE id = $bid and vip > 0 and stime > 0");
+$wp = $_pm['mysql'] -> getOneRecord("SELECT * FROM props WHERE id = $bid and vip > 0 and vip < 99999 and stime > 0 and LEFT(CAST(stime AS CHAR),1) IN (1,2,3,4)");
 //vip 为0表示下架
 if(empty($wp['vip']))
 {

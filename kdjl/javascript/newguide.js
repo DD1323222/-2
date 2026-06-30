@@ -26,111 +26,195 @@ function showfirst()
 {
 	setTab('task',3,11);getTaskDetail('3');bid=3;OpenLogin(1,662,3,4);;
 }
-var lastusetime = 0;
 var checktime = 1;
 var guide_step = 0;
-if(typeof(new_guide_step_db)!='undefined'&&new_guide_step_db<20)
-{
-	guide_step=new_guide_step_db;
-	$('gw').src='/function/City_Mod.php';doguide();
+var guide_busy = false;
+var guide_prize_step = -1;
+
+function guideStopEvent(event){
+	event = event || window.event;
+	if(event){
+		if(event.preventDefault){
+			event.preventDefault();
+		}
+		event.cancelBubble = true;
+		if(event.stopPropagation){
+			event.stopPropagation();
+		}
+	}
+	return false;
 }
 
-var opt = {
-		method: 'get',
-		 onSuccess: function(y) {
-			guide_step = y.responseText;
-		},
-		on404: function() {
-		},
-		onFailure: function() {
-		},
-		asynchronous:true        
-	}
-var ajax=new Ajax.Request('./function/guide.php?op=ajax_guide', opt);
+function guideSetBusy(busy){
+	guide_busy = busy;
+	checktime = busy ? 1 : 2;
+	$('guide_next').style.cursor = busy ? 'wait' : 'pointer';
+	$('guide_a').style.cursor = busy ? 'wait' : 'pointer';
+}
 
-if(guide_step < 20 && guide_step >= 0){	
-	$('guide_text').style.display="block";
-	$('guide_girl').style.display="block";
-	$('new_guide_div').style.display="block";
-	$('guide_click').style.display="block";
-	checktime = 2;
-	doguide();
+function guideHide(){
+	$('guide_click').style.display = 'none';
+	$('guide_text').style.display = 'none';
+	$('guide_girl').style.display = 'none';
+	$('new_guide_div').style.display = 'none';
+}
+
+function guideFail(message){
+	guideSetBusy(false);
+	if(message){
+		Alert(message);
+	}else{
+		Alert('\u64cd\u4f5c\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002');
+	}
+}
+
+function guideResponseStep(text, prefix){
+	var match = (text || '').replace(/^\s+|\s+$/g, '').match(new RegExp('^' + prefix + ':(-?\\d+)'));
+	return match ? parseInt(match[1], 10) : null;
+}
+
+function guidePosition(){
+	var main = $('main');
+	var left = 0;
+	var top = 0;
+	if(main && main.getBoundingClientRect){
+		var rect = main.getBoundingClientRect();
+		var doc = document.documentElement;
+		var body = document.body;
+		left = rect.left + (window.pageXOffset || doc.scrollLeft || body.scrollLeft || 0);
+		top = rect.top + (window.pageYOffset || doc.scrollTop || body.scrollTop || 0);
+	}else if(main){
+		left = main.offsetLeft || 0;
+		top = main.offsetTop || 0;
+	}
+	return {left:left, top:top};
 }
 
 function doguide(){
-	var now = (new Date()).getTime();
-	
-	if(now-lastusetime<1000){	
+	if(guide_step < 0 || guide_step >= 20 || !data_guide[guide_step]){
+		if(guide_step == 20 && data_guide[guide_step] && data_guide[guide_step].prize != '0' && guide_prize_step != guide_step){
+			guide_prize_step = guide_step;
+			Alert(data_guide[guide_step].prize.split('|')[1]);
+		}
+		guideHide();
 		return;
 	}
-	lastusetime = now;
-	checktime = 1;
+
+	var position = guidePosition();
+	$('new_guide_div').style.left = position.left + 'px';
+	$('new_guide_div').style.top = position.top + 'px';
 	$('guide_text').innerHTML = data_guide[guide_step].text;
-	$('guide_text').style.display="block";
-	var left = (parseInt(document.documentElement.clientWidth)-1000)/2;
-	var top1 = (parseInt(document.documentElement.clientHeight)-614)/2;
-	top1=top1<0?0:top1;
-	$('guide_click').style.left = (data_guide[guide_step].x+left)+'px';
-	$('guide_click').style.top = (data_guide[guide_step].y+top1)+'px';
-	$('guide_click').style.width = data_guide[guide_step].w+'px';
-	$('guide_click').style.height = data_guide[guide_step].h+'px';
+	$('guide_text').style.display = 'block';
+	$('guide_girl').style.display = 'block';
+	$('new_guide_div').style.display = 'block';
+	$('guide_click').style.display = 'block';
+	$('guide_click').style.left = (data_guide[guide_step].x + position.left) + 'px';
+	$('guide_click').style.top = (data_guide[guide_step].y + position.top) + 'px';
+	$('guide_click').style.width = data_guide[guide_step].w + 'px';
+	$('guide_click').style.height = data_guide[guide_step].h + 'px';
 	$('guide_click').innerHTML = '<img src="../new_images/ui/guide_hand.gif" />';
-		$('guide_girl').style.left = (data_guide[guide_step].gx+left)+'px';
-		$('guide_girl').style.top = (data_guide[guide_step].gy+top1)+'px';
-	if(data_guide[guide_step].prize != '0'){
-		var prize = data_guide[guide_step].prize.split('|');
-		Alert(prize[1]);
+	$('guide_girl').style.left = (data_guide[guide_step].gx + position.left) + 'px';
+	$('guide_girl').style.top = (data_guide[guide_step].gy + position.top) + 'px';
+	if(data_guide[guide_step].prize != '0' && guide_prize_step != guide_step){
+		guide_prize_step = guide_step;
+		Alert(data_guide[guide_step].prize.split('|')[1]);
 	}
-	if(guide_step >= 20){
-		$('guide_click').style.display="none";
-		$('guide_text').style.display="none";
-		$('guide_girl').style.display="none";
-		$('new_guide_div').style.display="none";
-	}
-	$('guide_click').onclick = doclick;
-	$('guide_text').onclick = doclick;
-}
-function doclick()
-{
-	if(checktime != 2){
-		return;
-	}
-	eval(data_guide[guide_step].click_js);
-	guide_step++;
-	doguide();
-	var opt1 = {
-		method: 'get',
-		 onSuccess: function(a) {
-			 var info = a.responseText;
-			 checktime = 2;
-		},
-		on404: function(a) {
-		},
-		onFailure: function(a) {
-		},
-		asynchronous:true
-	}
-	var ajax=new Ajax.Request('./function/guide.php?op=add_guide_step', opt1);
+	guideSetBusy(false);
 }
 
-function do_over(){
-	if(!confirm('新手教程可以获得更多奖励，是否确认跳过教程？')){
-		return;
+function doclick(event)
+{
+	guideStopEvent(event);
+	if(guide_busy || guide_step < 0 || guide_step >= 20){
+		return false;
 	}
+
+	var old_step = guide_step;
+	guideSetBusy(true);
+	var opt1 = {
+		method: 'get',
+		onSuccess: function(a) {
+			var info = a.responseText || '';
+			var new_step = guideResponseStep(info, 'OK');
+			if(new_step === null){
+				var sync_step = guideResponseStep(info, 'SYNC');
+				if(sync_step !== null){
+					guide_step = sync_step;
+					doguide();
+					return;
+				}
+				guideFail(info.replace(/^ERROR:/, ''));
+				return;
+			}
+			try{
+				eval(data_guide[old_step].click_js);
+			}catch(e){}
+			guide_step = new_step;
+			doguide();
+		},
+		on404: function() {
+			guideFail();
+		},
+		onFailure: function() {
+			guideFail();
+		},
+		asynchronous:true
+	};
+	new Ajax.Request('./function/guide.php?op=add_guide_step&step=' + old_step + '&_=' + (new Date()).getTime(), opt1);
+	return false;
+}
+
+function do_over(event){
+	guideStopEvent(event);
+	if(guide_busy){
+		return false;
+	}
+	if(!confirm('新手教程可以获得更多奖励，是否确认跳过教程？')){
+		return false;
+	}
+	guideSetBusy(true);
 	var opt1 = {
 		method: 'get',
 		 onSuccess: function(a) {
-			 Alert(a.responseText);
-			 $('guide_click').style.display="none";
-			$('guide_text').style.display="none";
-			$('guide_girl').style.display="none";
-			$('new_guide_div').style.display="none";
+			 var info = a.responseText || '';
+			 if(info.indexOf('OK:') !== 0){
+				 var sync_step = guideResponseStep(info, 'SYNC');
+				 if(sync_step !== null){
+					 guide_step = sync_step;
+					 if(guide_step < 0 || guide_step >= 20){
+						 guideHide();
+					 }else{
+						 doguide();
+					 }
+					 return;
+				 }
+				 guideFail(info.replace(/^ERROR:/, ''));
+				 return;
+			 }
+			 guide_step = -1;
+			 guideHide();
+			 Alert(info.substring(3));
 		},
-		on404: function(a) {
+		on404: function() {
+			guideFail();
 		},
-		onFailure: function(a) {
+		onFailure: function() {
+			guideFail();
 		},
 		asynchronous:true        
+	};
+	new Ajax.Request('./function/guide.php?op=do_over&step=' + guide_step + '&_=' + (new Date()).getTime(), opt1);
+	return false;
+}
+
+if(typeof(new_guide_step_db) != 'undefined'){
+	guide_step = parseInt(new_guide_step_db, 10);
+	if(guide_step >= 0 && guide_step < 20){
+		$('gw').src = '/function/City_Mod.php';
+		$('guide_click').onclick = doclick;
+		$('guide_text').onclick = doclick;
+		$('guide_next').onclick = doclick;
+		$('guide_a').onclick = do_over;
+		doguide();
 	}
-	var ajax=new Ajax.Request('./function/guide.php?op=do_over', opt1);
 }

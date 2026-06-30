@@ -21,14 +21,24 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 			adminRedirect($returnUrl);
 		}
 		$value2 = adminSqlDateTime($start) . '|' . adminSqlDateTime($end);
+		$adminDb->query('START TRANSACTION');
+		$lockedConfig = $adminDb->getOneRecord("SELECT Id,value2,contents FROM welcome WHERE code='timelimitbuy' LIMIT 1 FOR UPDATE");
+		if (is_array($lockedConfig)) $config = $lockedConfig;
 		if (!adminSaveLimitedConfig($adminDb, $config, $value2, $items))
 		{
+			$adminDb->query('ROLLBACK');
 			adminSetFlash('error', '活动时间保存失败：' . $adminDb->getError());
 			adminRedirect($returnUrl);
 		}
 		if (isset($_POST['reset_sales']))
 		{
 			foreach ($items as $itemId => $stock) $adminMem->del('zhekou_' . intval($itemId) . '_num');
+		}
+		if (!$adminDb->query('COMMIT'))
+		{
+			$adminDb->query('ROLLBACK');
+			adminSetFlash('error', '抢购活动时间提交失败。');
+			adminRedirect($returnUrl);
 		}
 		$cacheOk = adminRefreshWelcomeCache($adminDb, $adminMem);
 		adminSetFlash($cacheOk ? 'success' : 'warning', '抢购活动时间已保存' . (isset($_POST['reset_sales']) ? '，已售数量已重置' : '') . ($cacheOk ? '。' : '，但活动缓存刷新失败。'));
@@ -65,8 +75,9 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 				$batchOk = false;
 				break;
 			}
-			if (intval($batchRow['yb']) < 1 && intval($batchRow['sj']) < 1 && intval($batchRow['vip']) < 1 &&
-				!$adminDb->query("UPDATE props SET stime=0 WHERE id={$id}"))
+			if (!adminSalePriceActive($batchRow['yb']) && !adminSalePriceActive($batchRow['sj']) &&
+				!adminSalePriceActive($batchRow['vip']) &&
+				!$adminDb->query("UPDATE props SET yb=0,sj=0,vip=0,zhekouyb=0,stime=0,timelimit='' WHERE id={$id}"))
 			{
 				$batchOk = false;
 				break;
@@ -104,7 +115,9 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 			adminSetFlash('error', '抢购下架失败：' . $adminDb->getError());
 			adminRedirect($returnUrl);
 		}
-		if (intval($prop['yb']) < 1 && intval($prop['sj']) < 1 && intval($prop['vip']) < 1 && !$adminDb->query("UPDATE props SET stime=0 WHERE id={$propId}"))
+		if (!adminSalePriceActive($prop['yb']) && !adminSalePriceActive($prop['sj']) &&
+			!adminSalePriceActive($prop['vip']) &&
+			!$adminDb->query("UPDATE props SET yb=0,sj=0,vip=0,zhekouyb=0,stime=0,timelimit='' WHERE id={$propId}"))
 		{
 			$adminDb->query('ROLLBACK');
 			adminSetFlash('error', '抢购下架失败：' . $adminDb->getError());
@@ -155,8 +168,23 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 		$items[$propId] = $stock;
 		$timelimit = $start === '' && $end === '' ? '' : $start . '|' . $end;
 		$timeSql = $adminDb->escape($timelimit);
+		$otherChannels = adminOtherActiveChannels($prop, 'limit', $items);
+		if (count($otherChannels) > 0 &&
+			(intval($prop['stime']) !== $stime || adminStoredSchedule($prop['timelimit']) !== $timelimit))
+		{
+			adminSetFlash('error', '该道具同时在' . implode('、', $otherChannels) . '上架，分类、排序和单品时间需保持一致。');
+			adminRedirect($returnUrl);
+		}
+		$setParts = array("zhekouyb={$price}", "stime={$stime}", "timelimit='{$timeSql}'");
+		if (adminCategory($prop['stime']) === 0)
+		{
+			foreach (array('yb', 'sj', 'vip') as $normalField)
+			{
+				if (adminSalePriceActive($prop[$normalField])) $setParts[] = $normalField . '=0';
+			}
+		}
 		$adminDb->query('START TRANSACTION');
-		if (!$adminDb->query("UPDATE props SET zhekouyb={$price},stime={$stime},timelimit='{$timeSql}' WHERE id={$propId}") ||
+		if (!$adminDb->query('UPDATE props SET ' . implode(',', $setParts) . " WHERE id={$propId}") ||
 			!adminSaveLimitedConfig($adminDb, $config, $config['value2'], $items) ||
 			!$adminDb->query('COMMIT'))
 		{
@@ -220,7 +248,7 @@ adminPageStart('抢购商城管理', 'limited');
 		<div class="section-head"><div><h2>搜索并上架</h2><?php if ($search !== '') { ?><div class="subtle">找到 <?php echo count($searchRows); ?> 条结果</div><?php } ?></div><form class="form-row" method="get" action="limited.php#search-results"><input class="input" style="width:360px" type="search" name="q" value="<?php echo adminH($search); ?>" placeholder="道具 ID 或名称" /><button class="btn primary" type="submit">搜索</button></form></div>
 		<?php if ($search !== '' && count($searchRows) === 0) { ?><div class="empty">没有匹配的道具</div><?php } else if (count($searchRows) > 0) { ?><div class="results">
 		<?php foreach ($searchRows as $row) { $category = adminCategory($row['stime']); if ($category === 0) $category = 1; $parts = explode('|', (string)$row['timelimit']); $stock = isset($items[intval($row['id'])]) ? intval($items[intval($row['id'])]) : 1; ?>
-		<div class="edit-row"><form class="edit-form limited" method="post"><input type="hidden" name="action" value="publish" /><input type="hidden" name="prop_id" value="<?php echo intval($row['id']); ?>" /><div><?php adminPropLabel($row); ?></div><div class="field"><label>抢购价（元宝）</label><input class="input" type="number" min="1" max="99998" name="price" value="<?php echo intval($row['zhekouyb']) > 0 && intval($row['zhekouyb']) < 99999 ? intval($row['zhekouyb']) : 1; ?>" required="required" /></div><div class="field"><label>总库存</label><input class="input" type="number" min="1" name="stock" value="<?php echo $stock; ?>" required="required" /></div><div class="field"><label>分类</label><select class="select" name="category"><?php foreach ($categoryNames as $key => $label) { ?><option value="<?php echo $key; ?>"<?php echo $category === $key ? ' selected="selected"' : ''; ?>><?php echo adminH($label); ?></option><?php } ?></select></div><div class="datetime-pair"><div class="field"><label>单品开始</label><input class="input" type="datetime-local" name="item_start" value="<?php echo adminH(isset($parts[0]) ? adminCompactDateInput($parts[0]) : ''); ?>" /></div><div class="field"><label>单品结束</label><input class="input" type="datetime-local" name="item_end" value="<?php echo adminH(isset($parts[1]) ? adminCompactDateInput($parts[1]) : ''); ?>" /></div></div><div class="field"><label>排序编号</label><input class="input" name="sort_suffix" value="<?php echo adminH(adminSortSuffix($row['stime'])); ?>" placeholder="自动" /></div><button class="btn primary" type="submit"><?php echo isset($items[intval($row['id'])]) ? '更新' : '上架'; ?></button></form></div>
+		<div class="edit-row"><form class="edit-form limited" method="post"><input type="hidden" name="action" value="publish" /><input type="hidden" name="prop_id" value="<?php echo intval($row['id']); ?>" /><div><?php adminPropLabel($row); ?></div><div class="field"><label>抢购价（元宝）</label><input class="input" type="number" min="1" max="99998" name="price" value="<?php echo intval($row['zhekouyb']) > 0 && intval($row['zhekouyb']) < 99999 ? intval($row['zhekouyb']) : 1; ?>" required="required" /></div><div class="field"><label>总库存</label><input class="input" type="number" min="1" name="stock" value="<?php echo $stock; ?>" required="required" /></div><div class="field"><label>分类</label><select class="select" name="category"><?php foreach ($categoryNames as $key => $label) { ?><option value="<?php echo $key; ?>"<?php echo $category === $key ? ' selected="selected"' : ''; ?>><?php echo adminH($label); ?></option><?php } ?></select></div><div class="datetime-pair"><div class="field"><label>单品开始（共享）</label><input class="input" type="datetime-local" name="item_start" value="<?php echo adminH(isset($parts[0]) ? adminCompactDateInput($parts[0]) : ''); ?>" /></div><div class="field"><label>单品结束（共享）</label><input class="input" type="datetime-local" name="item_end" value="<?php echo adminH(isset($parts[1]) ? adminCompactDateInput($parts[1]) : ''); ?>" /></div></div><div class="field"><label>分类内排序号</label><input class="input" name="sort_suffix" value="<?php echo adminH(adminSortSuffix($row['stime'])); ?>" placeholder="自动" /></div><button class="btn primary" type="submit"><?php echo isset($items[intval($row['id'])]) ? '更新' : '上架'; ?></button></form></div>
 		<?php } ?></div><?php } ?>
 	</section>
 <?php adminPageEnd(); ?>
