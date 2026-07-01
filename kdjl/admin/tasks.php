@@ -302,32 +302,40 @@ function adminTaskNextXulie($tasks)
 	return $max + 1;
 }
 
-function adminTaskPreviousId($tasks, $taskId)
+function adminTaskNextId($tasks, $taskId)
 {
 	$taskId = intval($taskId);
 	if ($taskId < 1) return 0;
 	foreach ($tasks as $row)
 	{
-		$rowId = intval($row['id']);
-		if ($rowId === $taskId) continue;
+		if (intval($row['id']) !== $taskId) continue;
 		$parts = adminTaskRwlParts($row['cid']);
-		if ($parts !== false && intval($parts['next']) === $taskId) return $rowId;
+		if ($parts !== false) return intval($parts['next']);
 	}
 	return 0;
 }
 
 function adminTaskNextFlag($tasks, $timeRows)
 {
-	$max = 0;
-	foreach ($tasks as $row) if (intval($row['flags']) > $max) $max = intval($row['flags']);
+	$used = array();
+	foreach ($tasks as $row)
+	{
+		$flag = intval($row['flags']);
+		if ($flag > 0) $used[$flag] = true;
+	}
 	if (is_array($timeRows))
 	{
 		foreach ($timeRows as $row)
 		{
-			if ($row['titles'] === 'task' && preg_match('/^[0-9]+$/', (string)$row['days']) && intval($row['days']) > $max) $max = intval($row['days']);
+			if ($row['titles'] === 'task' && preg_match('/^[0-9]+$/', (string)$row['days']))
+			{
+				$flag = intval($row['days']);
+				if ($flag > 0) $used[$flag] = true;
+			}
 		}
 	}
-	return $max + 1;
+	for ($flag = 1; $flag <= 255; $flag++) if (!isset($used[$flag])) return $flag;
+	return 256;
 }
 
 function adminTaskDateToCompact($value)
@@ -360,7 +368,11 @@ function adminTaskSaveSchedule($db, $flag, $start, $end)
 		}
 		return true;
 	}
-	return $db->query("INSERT INTO timeconfig(titles,days,starttime,endtime) VALUES('task','{$flag}','{$startSql}','{$endSql}')") ? true : false;
+	$allRows = $db->getRecords("SELECT Id FROM timeconfig ORDER BY Id FOR UPDATE");
+	if (!is_array($allRows)) return false;
+	$newId = adminNextFreeNumericId($allRows, 'Id');
+	if ($newId === false) return false;
+	return $db->query("INSERT INTO timeconfig(Id,titles,days,starttime,endtime) VALUES({$newId},'task','{$flag}','{$startSql}','{$endSql}')") ? true : false;
 }
 
 function adminTaskFail($db, $message, $returnUrl, $rollback)
@@ -385,6 +397,28 @@ function adminTaskNames($ids, $map)
 		$result[] = isset($map[$id]) ? ('#' . $id . ' ' . $map[$id]['name']) : ('#' . $id . ' 不存在');
 	}
 	return implode(' / ', $result);
+}
+
+function adminTaskPickerSource($map)
+{
+	$result = array();
+	foreach ($map as $id => $row)
+	{
+		$result[] = array('id' => intval($id), 'name' => isset($row['name']) ? (string)$row['name'] : '');
+	}
+	return $result;
+}
+
+function adminTaskPickerField($label, $name, $value, $source, $mode, $quantity, $extraClass, $multi)
+{
+?>
+	<div class="field task-picker-field <?php echo adminH($extraClass); ?>" data-task-picker="<?php echo adminH($mode); ?>" data-task-source="<?php echo adminH($source); ?>" data-task-label="<?php echo adminH($label); ?>" data-task-quantity="<?php echo $quantity ? '1' : '0'; ?>" data-task-multi="<?php echo $multi ? '1' : '0'; ?>">
+		<label><?php echo adminH($label); ?></label>
+		<textarea class="task-picker-store" name="<?php echo adminH($name); ?>" data-task-picker-value hidden="hidden"><?php echo adminH($value); ?></textarea>
+		<div class="task-picker-list" data-task-picker-list></div>
+		<button class="btn secondary" type="button" data-task-picker-add="1">添加</button>
+	</div>
+<?php
 }
 
 $colors = adminTaskColorLabels();
@@ -433,10 +467,9 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 
 		$oknpc = $isNew ? 8 : intval($existing['oknpc']);
 		if ($oknpc < 1) $oknpc = 8;
-		$completionMode = isset($_POST['completion_mode']) ? trim((string)$_POST['completion_mode']) : 'unlimited';
-		if ($completionMode !== 'once' && $completionMode !== 'limited') $completionMode = 'unlimited';
-		$isSequence = isset($_POST['is_sequence']) ? true : false;
-		if ($completionMode === 'once' && $isSequence) adminTaskFail($adminDb, '序列任务不能同时设置为 cid=0 的一次性任务。', $returnUrl, true);
+		$completionMode = isset($_POST['completion_mode']) ? trim((string)$_POST['completion_mode']) : 'sequence';
+		if ($completionMode === 'unlimited') $completionMode = 'repeat';
+		if ($completionMode !== 'sequence' && $completionMode !== 'once' && $completionMode !== 'limited' && $completionMode !== 'repeat') $completionMode = 'sequence';
 
 		$need = adminTaskBuildNeed($oknpc, isset($_POST['need_items']) ? $_POST['need_items'] : '', isset($_POST['need_kills']) ? $_POST['need_kills'] : '', isset($_POST['need_monself']) ? $_POST['need_monself'] : '', isset($_POST['need_raw']) ? $_POST['need_raw'] : '');
 		if ($need === false) adminTaskFail($adminDb, '所需物品、击杀怪物或交付主战宠物格式不正确。', $returnUrl, true);
@@ -448,52 +481,59 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 		$oldRwl = adminTaskRwlParts($existing['cid']);
 		$sequenceId = 0;
 		$cid = 'self';
-		$previousId = isset($_POST['previous_task_id']) ? intval($_POST['previous_task_id']) : 0;
+		$cacheTaskIds = array($taskId);
+		$nextId = isset($_POST['next_task_id']) ? intval($_POST['next_task_id']) : 0;
 		$postedXulie = isset($_POST['sequence_id']) ? intval($_POST['sequence_id']) : 0;
+		$isSequence = $completionMode === 'sequence';
+		if (!$isSequence)
+		{
+			$nextId = 0;
+			$postedXulie = 0;
+		}
 
-		if ($oldRwl !== false)
+		if (!$isSequence && $oldRwl !== false)
 		{
 			foreach ($lockedTasks as $row)
 			{
 				$rowId = intval($row['id']);
-				if ($rowId === $taskId || $rowId === $previousId) continue;
+				if ($rowId === $taskId) continue;
 				$parts = adminTaskRwlParts($row['cid']);
 				if ($parts !== false && intval($parts['next']) === $taskId)
 				{
 					$newCid = adminTaskMakeRwl($parts['current'], $oldRwl['next']);
-					if (!$adminDb->query("UPDATE task SET cid='" . $adminDb->escape($newCid) . "' WHERE id={$rowId}")) adminTaskFail($adminDb, '调整原序列前序任务失败：' . $adminDb->getError(), $returnUrl, true);
+					$cacheTaskIds[] = $rowId;
+					if (!$adminDb->query("UPDATE task SET cid='" . $adminDb->escape($newCid) . "' WHERE id={$rowId}")) adminTaskFail($adminDb, '调整原序列关联任务失败：' . $adminDb->getError(), $returnUrl, true);
 				}
 			}
 		}
 
 		if ($isSequence)
 		{
-			if ($previousId > 0 && isset($taskMap[$previousId]) && $previousId !== $taskId)
+			if ($nextId > 0 && (!isset($taskMap[$nextId]) || $nextId === $taskId)) adminTaskFail($adminDb, '后续任务不存在或不能选择当前任务。', $returnUrl, true);
+			if ($isNew)
 			{
-				$previous = $taskMap[$previousId];
-				if ($postedXulie > 0 && intval($previous['xulie']) !== $postedXulie) adminTaskFail($adminDb, '前序任务必须属于选择的现有序列号。', $returnUrl, true);
-				$sequenceId = intval($previous['xulie']);
-				if ($sequenceId < 1) $sequenceId = $postedXulie > 0 ? $postedXulie : adminTaskNextXulie($lockedTasks);
-				$prevParts = adminTaskRwlParts($previous['cid']);
-				$nextId = $prevParts !== false ? intval($prevParts['next']) : 0;
-				if ($nextId === $taskId) $nextId = $oldRwl !== false ? intval($oldRwl['next']) : 0;
-				$prevCid = adminTaskMakeRwl($previousId, $taskId);
-				if (!$adminDb->query("UPDATE task SET xulie={$sequenceId},cid='" . $adminDb->escape($prevCid) . "' WHERE id={$previousId}")) adminTaskFail($adminDb, '保存前序任务失败：' . $adminDb->getError(), $returnUrl, true);
-				$cid = adminTaskMakeRwl($taskId, $nextId);
+				$sequenceId = adminTaskNextXulie($lockedTasks);
+			}
+			else if ($postedXulie > 0)
+			{
+				$sequenceId = $postedXulie;
 			}
 			else
 			{
-				$sequenceId = $postedXulie > 0 ? $postedXulie : intval($existing['xulie']);
+				$sequenceId = intval($existing['xulie']);
+				if ($sequenceId < 1 && $nextId > 0 && isset($taskMap[$nextId])) $sequenceId = intval($taskMap[$nextId]['xulie']);
 				if ($sequenceId < 1) $sequenceId = adminTaskNextXulie($lockedTasks);
-				$nextId = $oldRwl !== false ? intval($oldRwl['next']) : 0;
-				$cid = adminTaskMakeRwl($taskId, $nextId);
 			}
+			if ($nextId > 0 && intval($taskMap[$nextId]['xulie']) > 0 && intval($taskMap[$nextId]['xulie']) !== $sequenceId) adminTaskFail($adminDb, '后续任务必须属于选择的现有序列号。', $returnUrl, true);
+			$cid = adminTaskMakeRwl($taskId, $nextId);
 			if ($sequenceId > 255) adminTaskFail($adminDb, '序列号超过 task.xulie 可保存范围。', $returnUrl, true);
 		}
 		else
 		{
 			$sequenceId = 0;
-			$cid = $completionMode === 'once' ? '0' : (($oldRwl === false && trim((string)$existing['cid']) !== '' && trim((string)$existing['cid']) !== '0') ? $existing['cid'] : 'self');
+			if ($completionMode === 'once') $cid = '0';
+			else if ($completionMode === 'repeat') $cid = 'self';
+			else $cid = ($oldRwl === false && trim((string)$existing['cid']) !== '' && trim((string)$existing['cid']) !== '0') ? $existing['cid'] : 'self';
 		}
 
 		$fromParsed = adminTaskParseFromNpc($existing['fromnpc']);
@@ -510,19 +550,26 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 
 		$flags = 0;
 		$scheduleChanged = false;
-		if (isset($_POST['is_limited']))
+		$startInput = isset($_POST['limit_start']) ? trim((string)$_POST['limit_start']) : '';
+		$endInput = isset($_POST['limit_end']) ? trim((string)$_POST['limit_end']) : '';
+		if ($startInput !== '' || $endInput !== '')
 		{
 			$flags = intval($existing['flags']);
 			if ($flags < 1)
 			{
 				$timeRows = $adminDb->getRecords("SELECT * FROM timeconfig WHERE titles='task' ORDER BY Id FOR UPDATE");
+				if (!is_array($timeRows)) adminTaskFail($adminDb, '限时配置读取失败：' . $adminDb->getError(), $returnUrl, true);
 				$flags = adminTaskNextFlag($lockedTasks, $timeRows);
 			}
 			if ($flags > 255) adminTaskFail($adminDb, '限时任务 flags 超过 task.flags 可保存范围。', $returnUrl, true);
-			$start = adminTaskDateToCompact(isset($_POST['limit_start']) ? $_POST['limit_start'] : '');
-			$end = adminTaskDateToCompact(isset($_POST['limit_end']) ? $_POST['limit_end'] : '');
+			$start = adminTaskDateToCompact($startInput);
+			$end = adminTaskDateToCompact($endInput);
 			if ($start === false || $end === false || $start === '' || $end === '' || $start > $end) adminTaskFail($adminDb, '限时任务必须填写有效的开始和结束时间。', $returnUrl, true);
 			if (!adminTaskSaveSchedule($adminDb, $flags, $start, $end)) adminTaskFail($adminDb, '保存限时任务时间失败：' . $adminDb->getError(), $returnUrl, true);
+			$scheduleChanged = true;
+		}
+		else if (intval($existing['flags']) > 0)
+		{
 			$scheduleChanged = true;
 		}
 
@@ -543,7 +590,7 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 		$sql = "UPDATE task SET title='{$titleSql}',fromnpc='{$fromnpcSql}',frommsg='{$frommsgSql}',okmsg='{$okmsgSql}',oknpc={$oknpc},okneed='{$needSql}',result='{$resultSql}',cid='{$cidSql}',limitlv='{$limitSql}',hide={$hide},xulie={$sequenceId},flags={$flags},color={$color} WHERE id={$taskId}";
 		if (!$adminDb->query($sql) || !$adminDb->query('COMMIT')) adminTaskFail($adminDb, '保存任务失败：' . $adminDb->getError(), $returnUrl, true);
 
-		$cacheOk = adminRefreshTaskCache($adminDb, $adminMem);
+		$cacheOk = adminRefreshTaskCache($adminDb, $adminMem, $cacheTaskIds);
 		if ($scheduleChanged) $cacheOk = adminRefreshTimeConfigCache($adminDb, $adminMem) && $cacheOk;
 		adminSetFlash($cacheOk ? 'success' : 'warning', '任务 #' . $taskId . ' 已保存' . ($cacheOk ? '。' : '，但任务或时间缓存刷新失败。'));
 		adminRedirect(adminTaskUrl($postView, $postQ, array('edit' => $taskId)));
@@ -654,13 +701,23 @@ if (is_array($editTask))
 	$result = adminTaskParseResult($editTask['result']);
 	$flag = intval($editTask['flags']);
 	$schedule = $flag > 0 && isset($timeByFlag[$flag]) ? $timeByFlag[$flag] : false;
-	$isSequence = intval($editTask['xulie']) > 0 || adminTaskRwlParts($editTask['cid']) !== false;
+	$isSequence = intval($editTask['xulie']) > 0;
 	$editCid = trim((string)$editTask['cid']);
-	if ($limit['cishu_times'] !== '' || $limit['cishu_days'] !== '') $completionMode = 'limited';
+	if ($isSequence) $completionMode = 'sequence';
+	else if ($limit['cishu_times'] !== '' || $limit['cishu_days'] !== '') $completionMode = 'limited';
 	else if (!$isSequence && ($editCid === '' || $editCid === '0')) $completionMode = 'once';
-	else $completionMode = 'unlimited';
-	$selectedPreviousId = adminTaskPreviousId($taskRows, intval($editTask['id']));
+	else $completionMode = 'repeat';
+	$selectedNextId = adminTaskNextId($taskRows, intval($editTask['id']));
+	$taskPickerSources = array(
+		'props' => adminTaskPickerSource($propsMap),
+		'gpc' => adminTaskPickerSource($gpcMap),
+		'pets' => adminTaskPickerSource($petMap)
+	);
+	$taskPickerJson = json_encode($taskPickerSources);
+	if ($taskPickerJson === false) $taskPickerJson = '{}';
+	$taskPickerJson = str_replace('</', '<\/', $taskPickerJson);
 ?>
+	<script>window.adminTaskPickerSources = <?php echo $taskPickerJson; ?>;</script>
 	<div class="task-modal">
 		<div class="task-dialog">
 			<div class="task-dialog-head">
@@ -677,33 +734,51 @@ if (is_array($editTask))
 					<div class="field"><label>color 分类</label><select class="select" name="color"><option value="0"<?php echo intval($editTask['color']) === 0 ? ' selected="selected"' : ''; ?>>0 - 未显示</option><?php foreach ($colors as $id => $label) { ?><option value="<?php echo intval($id); ?>"<?php echo intval($editTask['color']) === intval($id) ? ' selected="selected"' : ''; ?>><?php echo intval($id); ?> - <?php echo adminH($label); ?></option><?php } ?></select></div>
 					<div class="field"><label>hide</label><select class="select" name="hide"><option value="1"<?php echo intval($editTask['hide']) === 1 ? ' selected="selected"' : ''; ?>>1 - 显示</option><option value="2"<?php echo intval($editTask['hide']) === 2 ? ' selected="selected"' : ''; ?>>2 - 隐藏</option><option value="0"<?php echo intval($editTask['hide']) === 0 ? ' selected="selected"' : ''; ?>>0 - 其他</option></select></div>
 					<div class="field task-wide"><label>接取信息 frommsg</label><textarea class="textarea" name="frommsg" rows="6"><?php echo adminH($editTask['frommsg']); ?></textarea></div>
-					<div class="field task-wide"><label>完成信息 okmsg</label><textarea class="textarea" name="okmsg" rows="4"><?php echo adminH($editTask['okmsg']); ?></textarea></div>
-					<div class="field"><label>所需物品 pid:数量</label><textarea class="textarea" name="need_items" rows="6"><?php echo adminH(adminTaskJoined($need['items'])); ?></textarea></div>
-					<div class="field"><label>需击杀怪物 gpc_id:数量</label><textarea class="textarea" name="need_kills" rows="6"><?php echo adminH(adminTaskJoined($need['kills'])); ?></textarea></div>
-					<div class="field"><label>交付主战宠物 bb_id</label><input class="input" name="need_monself" value="<?php echo adminH($need['monself']); ?>" /></div>
-					<div class="field"><label>okneed 其他片段</label><textarea class="textarea" name="need_raw" rows="4"><?php echo adminH(adminTaskJoined($need['raw'])); ?></textarea></div>
+					<div class="field task-wide"><label>完成信息 okmsg</label><textarea class="textarea" name="okmsg" rows="6"><?php echo adminH($editTask['okmsg']); ?></textarea></div>
+					<?php adminTaskPickerField('所需物品', 'need_items', adminTaskJoined($need['items']), 'props', 'count', true, 'task-wide', false); ?>
+					<?php adminTaskPickerField('需击杀怪物', 'need_kills', adminTaskJoined($need['kills']), 'gpc', 'count', true, 'task-wide', true); ?>
+					<?php adminTaskPickerField('交付主战宠物', 'need_monself', $need['monself'], 'pets', 'ids', false, '', false); ?>
+					<textarea name="need_raw" hidden="hidden"><?php echo adminH(adminTaskJoined($need['raw'])); ?></textarea>
 					<div class="field"><label>接取最低等级</label><input class="input" name="level_min" value="<?php echo adminH($limit['level_min']); ?>" /></div>
 					<div class="field"><label>接取最高等级</label><input class="input" name="level_max" value="<?php echo adminH($limit['level_max']); ?>" /></div>
-					<div class="field"><label>接取出战宠物 bb_id</label><input class="input" name="accept_comself" value="<?php echo adminH($limit['comself']); ?>" /></div>
-					<div class="field"><label>完成方式</label><select class="select" name="completion_mode"><option value="unlimited"<?php echo $completionMode === 'unlimited' ? ' selected="selected"' : ''; ?>>可重复/其他条件控制</option><option value="once"<?php echo $completionMode === 'once' ? ' selected="selected"' : ''; ?>>一次性任务(cid=0)</option><option value="limited"<?php echo $completionMode === 'limited' ? ' selected="selected"' : ''; ?>>按天数限制(cishu)</option></select></div>
+					<?php adminTaskPickerField('接取出战宠物', 'accept_comself', $limit['comself'], 'pets', 'ids', false, '', false); ?>
+					<div class="field"><label>完成方式</label><select class="select" name="completion_mode" data-task-completion-mode="1"><option value="sequence"<?php echo $completionMode === 'sequence' ? ' selected="selected"' : ''; ?>>序列任务(单次)</option><option value="repeat"<?php echo $completionMode === 'repeat' ? ' selected="selected"' : ''; ?>>普通可重复(cid=self)</option><option value="once"<?php echo $completionMode === 'once' ? ' selected="selected"' : ''; ?>>一次性任务(cid=0)</option><option value="limited"<?php echo $completionMode === 'limited' ? ' selected="selected"' : ''; ?>>按天数限制(cid=self+cishu)</option></select></div>
 					<div class="field"><label>可完成次数</label><input class="input" name="cishu_times" value="<?php echo adminH($limit['cishu_times']); ?>" /></div>
 					<div class="field"><label>统计天数</label><input class="input" name="cishu_days" value="<?php echo adminH($limit['cishu_days']); ?>" /></div>
-					<div class="field"><label>limitlv 其他片段</label><textarea class="textarea" name="limit_raw" rows="4"><?php echo adminH(adminTaskJoined($limit['raw'])); ?></textarea></div>
+					<textarea name="limit_raw" hidden="hidden"><?php echo adminH(adminTaskJoined($limit['raw'])); ?></textarea>
 					<div class="field"><label>奖励经验</label><input class="input" name="reward_exp" value="<?php echo adminH($result['exp']); ?>" /></div>
-					<div class="field"><label>奖励物品 pid:数量</label><textarea class="textarea" name="reward_props" rows="5"><?php echo adminH(adminTaskJoined($result['props'])); ?></textarea></div>
-					<div class="field task-wide"><label>result 其他片段</label><textarea class="textarea" name="reward_raw" rows="4"><?php echo adminH(adminTaskJoined($result['raw'])); ?></textarea></div>
-					<label class="task-check"><input type="checkbox" name="is_sequence" value="1"<?php echo $isSequence ? ' checked="checked"' : ''; ?> /> 序列任务</label>
-					<div class="field"><label>现有序列号</label><select class="select" name="sequence_id" data-task-sequence-select="1"><option value="0">自动新序列</option><?php $seenXulie = array(); foreach ($taskRows as $row) { $x = intval($row['xulie']); if ($x < 1 || isset($seenXulie[$x])) continue; $seenXulie[$x] = true; ?><option value="<?php echo $x; ?>"<?php echo intval($editTask['xulie']) === $x ? ' selected="selected"' : ''; ?>><?php echo $x; ?></option><?php } ?></select></div>
-					<div class="field task-wide"><label>前序任务</label><select class="select" name="previous_task_id" data-task-previous-select="1" data-task-initial-previous="<?php echo intval($selectedPreviousId); ?>"><option value="0" data-task-xulie="0">不选择</option><?php foreach ($taskRows as $row) { $rowId = intval($row['id']); if ($rowId === intval($editTask['id'])) continue; $rowXulie = intval($row['xulie']); ?><option value="<?php echo $rowId; ?>" data-task-xulie="<?php echo $rowXulie; ?>"<?php echo $selectedPreviousId === $rowId ? ' selected="selected"' : ''; ?>><?php echo $rowId; ?> - <?php echo adminH($row['title']); ?> (xulie=<?php echo $rowXulie; ?>, cid=<?php echo adminH($row['cid']); ?>)</option><?php } ?></select></div>
-					<label class="task-check"><input type="checkbox" name="is_limited" value="1"<?php echo $flag > 0 ? ' checked="checked"' : ''; ?> /> 限时任务<?php echo $flag > 0 ? ' flags=' . $flag : ''; ?></label>
-					<div class="field"><label>限时开始</label><input class="input" type="datetime-local" name="limit_start" value="<?php echo $schedule ? adminH(adminTaskDateInput($schedule['starttime'])) : ''; ?>" /></div>
-					<div class="field"><label>限时结束</label><input class="input" type="datetime-local" name="limit_end" value="<?php echo $schedule ? adminH(adminTaskDateInput($schedule['endtime'])) : ''; ?>" /></div>
+					<?php adminTaskPickerField('奖励物品', 'reward_props', adminTaskJoined($result['props']), 'props', 'count', true, 'task-wide', false); ?>
+					<textarea name="reward_raw" hidden="hidden"><?php echo adminH(adminTaskJoined($result['raw'])); ?></textarea>
+					<div class="field task-full task-time-pair">
+						<div><label>现有序列号</label><select class="select" name="sequence_id" data-task-sequence-select="1"><option value="0">自动新序列</option><?php $seenXulie = array(); foreach ($taskRows as $row) { $x = intval($row['xulie']); if ($x < 1 || isset($seenXulie[$x])) continue; $seenXulie[$x] = true; ?><option value="<?php echo $x; ?>"<?php echo intval($editTask['xulie']) === $x ? ' selected="selected"' : ''; ?>><?php echo $x; ?></option><?php } ?></select></div>
+						<div><label>后续任务</label><select class="select" name="next_task_id" data-task-next-select="1" data-task-initial-next="<?php echo intval($selectedNextId); ?>"><option value="0" data-task-xulie="0">无后续</option><?php foreach ($taskRows as $row) { $rowId = intval($row['id']); if ($rowId === intval($editTask['id'])) continue; $rowXulie = intval($row['xulie']); ?><option value="<?php echo $rowId; ?>" data-task-xulie="<?php echo $rowXulie; ?>"<?php echo $selectedNextId === $rowId ? ' selected="selected"' : ''; ?>><?php echo $rowId; ?> - <?php echo adminH($row['title']); ?> (xulie=<?php echo $rowXulie; ?>, cid=<?php echo adminH($row['cid']); ?>)</option><?php } ?></select></div>
+					</div>
+					<div class="field task-wide task-time-pair">
+						<div><label>限时开始</label><input class="input" type="datetime-local" name="limit_start" value="<?php echo $schedule ? adminH(adminTaskDateInput($schedule['starttime'])) : ''; ?>" /></div>
+						<div><label>限时结束</label><input class="input" type="datetime-local" name="limit_end" value="<?php echo $schedule ? adminH(adminTaskDateInput($schedule['endtime'])) : ''; ?>" /></div>
+					</div>
 				</div>
 				<div class="task-dialog-actions">
-					<div class="subtle">保存时会自动保证 okneed 以 see:oknpc 开头；新增任务 fromnpc/oknpc 使用 8；一周一次可设为按天数限制 1 次/7 天。</div>
 					<button class="btn primary" type="submit">保存任务</button>
 				</div>
 			</form>
+		</div>
+	</div>
+	<div class="task-picker-modal" data-task-picker-modal="1" hidden="hidden">
+		<div class="task-picker-dialog">
+			<div class="task-dialog-head">
+				<h2 data-task-picker-title>选择</h2>
+				<button class="btn secondary" type="button" data-task-picker-close="1">关闭</button>
+			</div>
+			<div class="task-picker-body">
+				<div class="field task-wide"><label>搜索 id / 名称</label><input class="input" type="search" data-task-picker-search="1" /></div>
+				<div class="task-picker-selected" data-task-picker-selected>未选择</div>
+				<div class="field" data-task-picker-count-field><label>数量</label><input class="input" type="number" min="1" step="1" value="1" data-task-picker-count="1" /></div>
+				<div class="task-picker-results" data-task-picker-results></div>
+			</div>
+			<div class="task-picker-actions">
+				<button class="btn primary" type="button" data-task-picker-apply="1">确定</button>
+			</div>
 		</div>
 	</div>
 <?php } ?>

@@ -827,14 +827,23 @@ define(TASKENDTIME,			'2009-04-20 00:00:00');*/
 				//做过这个序列的任务
 				foreach($v as $vv){
 					if($vv == $result['taskid']){
-						$narr = explode('rwl:'.$result['taskid'].'|',$memtaskid[$result['taskid']]['cid']);
-						if(count($narr) != 1){
+						if(!isset($memtask[$result['taskid']]) || !is_array($memtask[$result['taskid']])){
 							continue;
 						}
-						if($narr[0] < 1){
+						$doneTask = $memtask[$result['taskid']];
+						$doneCid = explode(':',$doneTask['cid'],2);
+						if(count($doneCid) < 2 || $doneCid[0] != 'rwl'){
 							continue;
 						}
-						$tarr = $memtask[$narr[0]];
+						$nextArr = explode('|',$doneCid[1]);
+						$nextTaskId = isset($nextArr[1]) ? intval($nextArr[1]) : 0;
+						if($nextTaskId < 1 || !isset($memtask[$nextTaskId]) || !is_array($memtask[$nextTaskId])){
+							continue;
+						}
+						$tarr = $memtask[$nextTaskId];
+						if(!taskScheduleIsActive($tarr, $timearr, $nowtime)){
+							continue;
+						}
 						
 						$npcNum = explode("|",$tarr['fromnpc']);
 						$colortag = array('[', 

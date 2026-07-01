@@ -95,13 +95,25 @@ function adminRefreshTimeConfigCache($db, $mem)
 	return $ok;
 }
 
-function adminRefreshTaskCache($db, $mem)
+function adminRefreshTaskCache($db, $mem, $changedIds = array())
 {
 	$rows = $db->getRecords('SELECT * FROM task ORDER BY id');
 	if (!is_array($rows)) return false;
 	$byId = array();
 	foreach ($rows as $row) $byId[intval($row['id'])] = $row;
-	return $mem->set(array('k' => MEM_TASK_KEY, 'v' => $byId));
+	$ok = $mem->set(array('k' => MEM_TASK_KEY, 'v' => $byId));
+	if (is_array($changedIds))
+	{
+		$cleared = array();
+		foreach ($changedIds as $id)
+		{
+			$id = intval($id);
+			if ($id < 1 || isset($cleared[$id])) continue;
+			$mem->del('base_task_info_' . $id);
+			$cleared[$id] = true;
+		}
+	}
+	return $ok;
 }
 
 function adminNormalizeClockInput($value)
