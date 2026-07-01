@@ -562,6 +562,40 @@ function utime($inms){
     return $utime;
 }
 
+/**
+ * 判断任务是否处于 timeconfig 配置的开放时间内。
+ * flags=0 为普通任务；flags=N 匹配 titles=task 且 days=N 的任一时间段。
+ */
+function taskScheduleIsActive($taskinfo, $timearr = null, $nowtime = null)
+{
+	if(!is_array($taskinfo)) return false;
+	if(empty($taskinfo['flags'])) return true;
+
+	if($nowtime === null) $nowtime = date('YmdHis');
+	if(!preg_match('/^[0-9]{14}$/', (string)$nowtime)) return false;
+
+	if($timearr === null)
+	{
+		global $_pm;
+		if(!isset($_pm['mem']) || !is_object($_pm['mem'])) return false;
+		$timearr = @unserialize($_pm['mem']->get(MEM_TIME_KEY));
+	}
+	if(!is_array($timearr)) return false;
+
+	foreach($timearr as $timeinfo)
+	{
+		if(!is_array($timeinfo) || !isset($timeinfo['titles'], $timeinfo['days'], $timeinfo['starttime'], $timeinfo['endtime'])) continue;
+		if($timeinfo['titles'] != 'task' || (string)$timeinfo['days'] !== (string)$taskinfo['flags']) continue;
+
+		$starttime = (string)$timeinfo['starttime'];
+		$endtime = (string)$timeinfo['endtime'];
+		if(!preg_match('/^[0-9]{14}$/', $starttime) || !preg_match('/^[0-9]{14}$/', $endtime)) continue;
+		if($starttime <= $endtime && $nowtime >= $starttime && $nowtime <= $endtime) return true;
+	}
+
+	return false;
+}
+
 /*
 	接受任务
 	$num 接爱NPC序号
@@ -582,13 +616,6 @@ function taskcheck($taskid,$num)
 	$nowtime = date("YmdHis");
 	$timearr = unserialize($_pm['mem']->get(MEM_TIME_KEY));
 	$memtask = unserialize($_pm['mem']->get(MEM_TASK_KEY));
-	foreach($timearr as $tv)
-	{
-		if($tv['titles'] == "task")
-		{
-			$taskcheckarr[] = $tv;
-		}
-	}
 	if(!empty($taskid))
 	{
 		/*$taskinfo = $_pm['mem']->dataGet(array('k'	=>	MEM_TASK_KEY,
@@ -603,20 +630,8 @@ define(TASKENDTIME,			'2009-04-20 00:00:00');*/
 	
 	if (is_array($taskinfo))
 	{
-		$checktaskflag = 1;
-		if(!empty($flags))
-		{
-			foreach($taskcheckarr as $fv)
-			{
-				if($fv['days'] == $taskinfo['flags'] && $nowtime >= $fv['starttime'] && $nowtime <= $fv['endtime'])
-				{
-					$checktaskflag = 2;
-				}
-			}
-		}
-		
 		// compose task ui.title=>detail
-		if($checktaskflag == 1)
+		if(taskScheduleIsActive($taskinfo, $timearr, $nowtime))
 		{
 			if ($taskinfo['oknpc'] == $num)
 			{
@@ -652,18 +667,7 @@ define(TASKENDTIME,			'2009-04-20 00:00:00');*/
 	$rwlidarr = array();
 	foreach($memtask as $v)
 	{
-		$flagsarrcheck = 1;
-		if(!empty($v['flags']))
-		{
-			foreach($taskcheckarr as $vx)
-			{
-				if($v['flags'] == $vx['days'] && $nowtime >= $vx['starttime'] && $nowtime <= $vx['endtime'])
-				{
-					$flagsarrcheck = 2;
-				}
-			}
-		}
-		if($flagsarrcheck != 1)
+		if(!taskScheduleIsActive($v, $timearr, $nowtime))
 		{
 			continue;
 		}
@@ -2248,17 +2252,142 @@ function stopUser2($type=1,$flag = true)
 @Param: array=> $user
 @Return false or array.
 */
+function weeklyDayList($days)
+{
+	$result = array();
+	$parts = preg_split('/[\s,，|]+/', trim((string)$days));
+	if (!is_array($parts)) return $result;
+	foreach ($parts as $part)
+	{
+		if ($part === '' || !preg_match('/^\d+$/', $part)) continue;
+		$day = intval($part);
+		if ($day >= 1 && $day <= 7) $result[$day] = $day;
+	}
+	ksort($result);
+	return array_values($result);
+}
+
+function weeklyDaysContain($days, $currentDay = null)
+{
+	if ($currentDay === null) $currentDay = date('N');
+	return in_array(intval($currentDay), weeklyDayList($days), true);
+}
+
+function weeklyDaysText($days)
+{
+	$labels = array(1 => '一', 2 => '二', 3 => '三', 4 => '四', 5 => '五', 6 => '六', 7 => '日');
+	$result = array();
+	foreach (weeklyDayList($days) as $day) $result[] = $labels[$day];
+	return implode('、', $result);
+}
+
+function clockTimeToMinutes($time)
+{
+	$time = trim((string)$time);
+	if (preg_match('/^(\d{1,2}):(\d{2})$/', $time, $parts))
+	{
+		$hour = intval($parts[1]);
+		$minute = intval($parts[2]);
+	}
+	else if (preg_match('/^\d{1,4}$/', $time))
+	{
+		$time = str_pad($time, 4, '0', STR_PAD_LEFT);
+		$hour = intval(substr($time, 0, 2));
+		$minute = intval(substr($time, 2, 2));
+	}
+	else return false;
+	if ($hour > 23 || $minute > 59) return false;
+	return $hour * 60 + $minute;
+}
+
+function isWeeklyDayTimeActive($days, $starttime, $endtime, $currentDay = null, $currentTime = null, $includeEnd = true)
+{
+	if ($currentDay === null) $currentDay = date('N');
+	if ($currentTime === null) $currentTime = date('Hi');
+	$currentDay = intval($currentDay);
+	$current = clockTimeToMinutes($currentTime);
+	$start = clockTimeToMinutes($starttime);
+	$end = clockTimeToMinutes($endtime);
+	if ($currentDay < 1 || $currentDay > 7 || $current === false || $start === false || $end === false) return false;
+
+	if ($start <= $end)
+	{
+		if (!weeklyDaysContain($days, $currentDay)) return false;
+		return $current >= $start && ($includeEnd ? $current <= $end : $current < $end);
+	}
+
+	if (weeklyDaysContain($days, $currentDay) && $current >= $start) return true;
+	$previousDay = $currentDay === 1 ? 7 : $currentDay - 1;
+	if (!weeklyDaysContain($days, $previousDay)) return false;
+	return $includeEnd ? $current <= $end : $current < $end;
+}
+
+function isWeeklyDayTimeFinished($days, $endtime, $currentDay = null, $currentTime = null, $includeEnd = false)
+{
+	if ($currentDay === null) $currentDay = date('N');
+	if ($currentTime === null) $currentTime = date('Hi');
+	$current = clockTimeToMinutes($currentTime);
+	$end = clockTimeToMinutes($endtime);
+	if ($current === false || $end === false || !weeklyDaysContain($days, $currentDay)) return false;
+	return $includeEnd ? $current >= $end : $current > $end;
+}
+
+function weeklyMostRecentDay($days, $currentDay = null)
+{
+	if ($currentDay === null) $currentDay = date('N');
+	$currentDay = intval($currentDay);
+	$list = weeklyDayList($days);
+	if ($currentDay < 1 || $currentDay > 7 || count($list) === 0) return false;
+	for ($offset = 0; $offset < 7; $offset++)
+	{
+		$day = $currentDay - $offset;
+		if ($day < 1) $day += 7;
+		if (in_array($day, $list, true)) return $day;
+	}
+	return false;
+}
+
+function weeklyTimeToMinutes($day, $time)
+{
+	$day = intval($day);
+	$minutes = clockTimeToMinutes($time);
+	if ($day < 1 || $day > 7 || $minutes === false) return false;
+	return ($day - 1) * 1440 + $minutes;
+}
+
+function isWeeklyTimeRangeActive($starttime, $endtime, $currentDay = null, $currentTime = null)
+{
+	$startParts = explode('|', trim((string)$starttime), 2);
+	if (count($startParts) !== 2) return false;
+	$endParts = explode('|', trim((string)$endtime), 2);
+	$endHasDay = count($endParts) === 2;
+	$endDay = $endHasDay ? $endParts[0] : $startParts[0];
+	$endClock = $endHasDay ? $endParts[1] : $endParts[0];
+	$start = weeklyTimeToMinutes($startParts[0], $startParts[1]);
+	$end = weeklyTimeToMinutes($endDay, $endClock);
+	if ($start === false || $end === false) return false;
+	if ($end < $start) $end += $endHasDay ? 10080 : 1440;
+	if ($currentDay === null) $currentDay = date('N');
+	if ($currentTime === null) $currentTime = date('Hi');
+	$current = weeklyTimeToMinutes($currentDay, $currentTime);
+	if ($current === false) return false;
+	if ($current < $start && $end >= 10080) $current += 10080;
+	return $current >= $start && $current <= $end;
+}
+
 function usedProps(&$user)
 {
 	global $_pm;
 	$doubleexp = unserialize($_pm['mem']->get(MEM_TIME_KEY));
-	foreach($doubleexp as $v)
+	$newdoubleexparr = array();
+	$newdoubleexparr1 = array();
+	if(is_array($doubleexp)) foreach($doubleexp as $v)
 	{
 		if($v['titles'] == "exp")
 		{
 			$newdoubleexparr[$v['starttime'].'-'.$v['endtime']] = $v['days'];
 		}else if($v['titles'] == "exp1"){
-			$newdoubleexparr1[$v['starttime'].'-'.$v['endtime']] = $v['days'];
+			$newdoubleexparr1[] = $v;
 		}
 	}
 	$nowtime = date("YmdHis");	// double exp 12         3600
@@ -2340,21 +2469,11 @@ function usedProps(&$user)
 	}
 	if(is_array($newdoubleexparr1))
 	{
-		$week = date('w');
-		$time = date('Hi');
-		$k = "";
-		$v = "";
-		foreach($newdoubleexparr1 as $k => $v)
+		foreach($newdoubleexparr1 as $v)
 		{
-			if(!empty($k))
+			if(isWeeklyTimeRangeActive($v['starttime'], $v['endtime']))
 			{
-				$arr = "";
-				$arr = explode("-",$k);
-				$narr = explode('|',$arr[0]);
-				if($narr[0] == $week && $time >= $narr[1] && $time <= $arr[1])
-				{
-					$ret['double'] = $v;
-				}
+				$ret['double'] = $v['days'];
 			}
 		}
 	}
@@ -3410,6 +3529,7 @@ function getTasks($task,&$user,&$petsAll,&$bbs)
 	//print_r($taskinfo);
 	if(!is_array($taskinfo)) //die("数据错误！".__LINE__);
 		return false;
+	if(!taskScheduleIsActive($taskinfo)) return false;
 	
 	//只能完成一次,等级限制的任务
 	if(!empty($taskinfo['limitlv']))
@@ -3557,9 +3677,8 @@ function getTasks($task,&$user,&$petsAll,&$bbs)
 						
 					case "cishu":
 						//cishu:X:Y 次数限制判断：如果该任务在Y天已经完成了X次，则无法完成任务
-						$time = time() - $limitarrs[2] * 24 * 3600;
-						$today = strtotime(date('Ymd',time()));
-						$sql = "SELECT count(*) sl FROM tasklog WHERE uid = {$_SESSION['id']} and taskid = {$taskid} and time > {$today}";
+						$time = strtotime(date('Ymd',time())) - (max(1,intval($limitarrs[2])) - 1) * 24 * 3600;
+						$sql = "SELECT count(*) sl FROM tasklog WHERE uid = {$_SESSION['id']} and taskid = {$taskid} and time > {$time}";
 						$arr = $_pm['mysql'] -> getOneRecord($sql);
 						if(is_array($arr))
 						{

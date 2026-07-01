@@ -1,10 +1,10 @@
 <?php
 header("Content-type: text/html; charset=gbk"); 
 session_start();
-/*if( empty($_SESSION['id']) )
+if( empty($_SESSION['id']) )
 {
 	die("error");
-}*/
+}
 require_once('../config/config.game.php');
 $key = "xueyuanisarabbit";
 $secret = md5($key.$_SESSION['lastvtime']);
@@ -49,7 +49,8 @@ $a = getLock($_SESSION['id']);
 			unLockItem($id);
 			die('服务器繁忙，请稍候再试！');
 	}
-$sql = " SELECT userbag.sums,userbag.pid FROM userbag,props WHERE userbag.uid = {$_SESSION[id] } AND props.name = '".$sub_props_name."' AND userbag.pid = props.id AND userbag.sums > 0 ";
+$uid = intval($_SESSION['id']);
+$sql = "SELECT userbag.id,userbag.sums,userbag.pid FROM userbag,props WHERE userbag.uid=$uid AND props.name='".$sub_props_name."' AND userbag.pid=props.id AND userbag.sums>0 ORDER BY userbag.id LIMIT 1 FOR UPDATE";
 $res_sub_thing_info = $_pm['mysql'] -> getOneRecord($sql);
 if( !isset($res_sub_thing_info) ||  empty($res_sub_thing_info['sums']) )
 {
@@ -90,10 +91,10 @@ if( !isset($getprize) || empty($getprize) )
 
 $task = new task();
 $ret = $task->saveGetPropsMore($getprize,$thing_info_arr[$getprize][1]);
-if( intval($ret) == 200 )
+if($ret !== true)
 {
 	$_pm['mysql']->query('rollback');
-	die("bagfull");
+	die($ret === '200' ? "bagfull" : 'error');
 }
 if( $thing_info_arr[$getprize][2] == 1 )
 {
@@ -102,7 +103,12 @@ if( $thing_info_arr[$getprize][2] == 1 )
 	$word = "参加了幸运{$doing}活动，并幸运的获得了{$get_prize_name['name']}  {$thing_info_arr[$getprize][1]}个";
 	$task->saveGword($word);
 }
-$_pm['mysql']->query("UPDATE userbag SET sums=sums-1 WHERE pid={$res_sub_thing_info['pid']} and uid={$_SESSION[id]} and sums>0 ");
+$ticketId = intval($res_sub_thing_info['id']);
+$ticketUsed = $_pm['mysql']->query("UPDATE userbag SET sums=sums-1 WHERE id=$ticketId AND uid=$uid AND sums>0");
+if(!$ticketUsed || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+	$_pm['mysql']->query('ROLLBACK');
+	die('noegg');
+}
 realseLock();
 
 $good_things_result_arr_key = array_rand($good_things,4);

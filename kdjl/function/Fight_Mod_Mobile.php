@@ -928,9 +928,18 @@ if($_SESSION['multi_monsters'.$_SESSION['id']] == 1){//挑战
 }else{
 	//普通地图
 	//判断是否是玛亚大陆保卫战
-	$datew = date("w");
+	$datew = date("N");
 	$datehour = date("H:i");
-	$maya = $_pm['mysql'] -> getOneRecord("SELECT id FROM timeconfig WHERE days = '$datew' AND starttime <= '$datehour' AND endtime >= '$datehour' AND titles='maya'");
+	$maya = false;
+	$mayaTimeconfig = unserialize($_pm['mem']->get(MEM_TIME_KEY));
+	if(is_array($mayaTimeconfig)) foreach($mayaTimeconfig as $mayaConfig)
+	{
+		if($mayaConfig['titles'] == 'maya' && isWeeklyDayTimeActive($mayaConfig['days'], $mayaConfig['starttime'], $mayaConfig['endtime'], $datew, $datehour))
+		{
+			$maya = $mayaConfig;
+			break;
+		}
+	}
 	
 	
 	if($flagteam)//组队

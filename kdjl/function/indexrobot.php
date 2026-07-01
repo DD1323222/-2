@@ -1138,14 +1138,6 @@ break;
   </div>
 </div>
 
-<div id="new_guide_div" style="position:absolute;top:0;left:0;z-index:29998;width:1000px;height:620px; display:none"></div>
-<div id="guide_click" style="z-index:30000;position:absolute; display:none"></div>
-<div id="guide_girl" style="z-index:30000;position:absolute;left:356px;top:145px; width:492px; height:308px; background-image:url(../new_images/ui/guide_girl.gif); background-repeat:no-repeat; display:none">
-  <div id="guide_text" style="display:none;width:200px;left:158px;top:104px;z-index:30000;position:absolute; cursor:pointer;" onclick="$('gw').src='/function/City_Mod.php';doguide();"> <span style="cursor:pointer;" onclick="$('gw').src='/function/City_Mod.php';doguide();">欢迎来到口袋精灵世界，我是精灵使者“小熊”。下面跟着我一起熟悉一下口袋吧，你会获得丰厚的奖励哦！点击进入城镇</span>  </div>
-  <div id="guide_a" style="width:72px;left:417px; height:66px;top:154px;z-index:30000;position:absolute; cursor:pointer;" onclick="do_over()"></div>
-  <div id="guide_next" style=";width:58px;left:394px; height:49px;top:227px;z-index:30000;position:absolute; cursor:pointer;" onclick="doclick()"></div>
-</div>
-
 <div id="frienlist" style="position:absolute;width:120px; padding:6px; height:165px;z-index:1;left: 1007px;top: 436px; background-repeat:no-repeat; overflow:hidden;display:none; background-image:url(../new_images/ui/friend_blacklist_m.gif)">
   <div id="frienlisthandle" style="cursor:move; width:89px; height:21px; float: left; color:#FFFFFF">好友和黑名单<span onclick="if(checkTF(1)){blacklist();}" style="cursor:pointer; font-weight:bold; text-decoration:underline">&gt;&gt;</span></div>
   <div onclick="$('frienlist').style.display='none';" style="cursor: pointer; position: relative; float: right; width: 15px; margin-right: 7px; height: 17px;"></div>

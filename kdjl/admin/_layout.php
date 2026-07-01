@@ -4,6 +4,7 @@ function adminPageStart($title, $active)
 	$flash = adminGetFlash();
 	$shopOpen = in_array($active, array('yb', 'sj', 'vip', 'limited'));
 	$queryOpen = in_array($active, array('evolution', 'slime', 'nirvana', 'merge'));
+	$dropOpen = in_array($active, array('monster_drops', 'item_drops', 'activity_drops'));
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -11,13 +12,21 @@ function adminPageStart($title, $active)
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title><?php echo adminH($title); ?> - 游戏管理</title>
-	<link rel="stylesheet" href="admin.css?v=20260630-2" />
+	<link rel="stylesheet" href="admin.css?v=<?php echo intval(@filemtime(dirname(__FILE__) . '/admin.css')); ?>" />
 </head>
 <body>
 	<div class="admin-shell">
 		<aside class="sidebar">
 			<div class="brand">游戏管理</div>
 			<nav>
+				<details class="nav-group"<?php echo $dropOpen ? ' open="open"' : ''; ?>>
+					<summary>掉落管理</summary>
+					<a<?php echo $active === 'monster_drops' ? ' class="active"' : ''; ?> href="drops.php">怪物掉落管理</a>
+					<a<?php echo $active === 'item_drops' ? ' class="active"' : ''; ?> href="item_drops.php">道具掉落管理</a>
+					<a<?php echo $active === 'activity_drops' ? ' class="active"' : ''; ?> href="activity_drops.php">活动掉落管理</a>
+				</details>
+				<a class="nav-direct<?php echo $active === 'activities' ? ' active' : ''; ?>" href="activities.php">活动管理</a>
+				<a class="nav-direct<?php echo $active === 'tasks' ? ' active' : ''; ?>" href="tasks.php">任务管理</a>
 				<details class="nav-group"<?php echo $shopOpen ? ' open="open"' : ''; ?>>
 					<summary>神秘商店管理</summary>
 					<a<?php echo $active === 'yb' ? ' class="active"' : ''; ?> href="index.php">神秘商店管理</a>
@@ -45,7 +54,7 @@ function adminPageEnd()
 ?>
 		</main>
 	</div>
-	<script src="admin.js?v=20260630-2"></script>
+	<script src="admin.js?v=<?php echo intval(@filemtime(dirname(__FILE__) . '/admin.js')); ?>"></script>
 </body>
 </html>
 <?php

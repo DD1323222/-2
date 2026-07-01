@@ -336,12 +336,19 @@ function getechoprize($arr)
 						$idlist = $info[0];
 						$num = $info[1];
 						$result_of_get_prize = $card_task->saveGetPropsMore($idlist,$num);
+						if($result_of_get_prize !== true){
+							$_pm['mysql']->query('ROLLBACK');
+							die($result_of_get_prize === '200' ? '背包空间不足，请整理后再领取！' : '奖励发放失败，请稍候再试！');
+						}
 					}
-					echo "领取奖励成功";
 					$set = $_GET['prize'];
 					$sql = " UPDATE player_ext SET F_has_get_prize = '".$set."' WHERE uid = '".$_SESSION['id']."'";
-					$_pm['mysql']->query($sql);
+					if(!$_pm['mysql']->query($sql) || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+						$_pm['mysql']->query('ROLLBACK');
+						die('奖励状态保存失败，请稍候再试！');
+					}
 					realseLock();
+					echo "领取奖励成功";
 				}
 				else
 				{
@@ -368,13 +375,20 @@ function getechoprize($arr)
 							$idlist = $info[0];
 							$num = $info[1];
 							$result_of_get_prize = $card_task->saveGetPropsMore($idlist,$num);
+							if($result_of_get_prize !== true){
+								$_pm['mysql']->query('ROLLBACK');
+								die($result_of_get_prize === '200' ? '背包空间不足，请整理后再领取！' : '奖励发放失败，请稍候再试！');
+							}
 						}
-						echo "领取奖励成功";
 						$set = $result_has_get_prize['F_has_get_prize'] .= ",".$_GET['prize'];
 						$sql = " UPDATE player_ext SET F_has_get_prize = '".$set."' WHERE uid = '".$_SESSION['id']."'";
 						//echo $sql;
-						$_pm['mysql']->query($sql);
+						if(!$_pm['mysql']->query($sql) || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+							$_pm['mysql']->query('ROLLBACK');
+							die('奖励状态保存失败，请稍候再试！');
+						}
 						realseLock();
+						echo "领取奖励成功";
 					}
 				}
 			}

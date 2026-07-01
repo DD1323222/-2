@@ -171,18 +171,22 @@ realseLock();
 function moneyAdd($uid,$num){
 	global $_pm;
 	if($num < 0){
-		$_pm['mysql'] -> query('UPDATE player SET money = money +'.$num.' WHERE id = '.$uid.' AND money >= '.$num);
-		if(mysql_affected_rows($_pm['mysql'] -> getConn()) != 1){
-			$_pm['mysql'] -> query('UPDATE player SET money = 0 WHERE id = '.$uid);
+		$cost = abs(intval($num));
+		if(!$_pm['mysql'] -> query('UPDATE player SET money = GREATEST(0,money-'.$cost.') WHERE id = '.intval($uid))){
+			$_pm['mysql']->query('ROLLBACK');
+			die('金币结算失败，请稍候再试！');
 		}
 	}else{
 		//echo 'UPDATE player SET money = money +'.$num.' WHERE id = '.$uid;
-		$_pm['mysql'] -> query('UPDATE player SET money = money +'.$num.' WHERE id = '.$uid);
+		if(!$_pm['mysql'] -> query('UPDATE player SET money = money +'.intval($num).' WHERE id = '.intval($uid))){
+			$_pm['mysql']->query('ROLLBACK');
+			die('金币结算失败，请稍候再试！');
+		}
 	}
 }
 
 function getItem($str){
-	global $_pm,$s;//749:1:3:2
+	global $_pm,$s,$fortress_num;//749:1:3:2
 	$flag = 0;
 	$propslist = explode(',', $str);
 	if (is_array($propslist)){
@@ -191,7 +195,12 @@ function getItem($str){
 			$inarr = explode(':', $v);
 			if(is_array($inarr)){
 				if (rand(1, intval($inarr[2])) == 1){	//  rand hits
-					$task->saveGetPropsMore($inarr[0],$inarr[1]);
+					$giveResult = $task->saveGetPropsMore($inarr[0],$inarr[1]);
+					if($giveResult !== true){
+						$_pm['mysql']->query('ROLLBACK');
+						$_pm['mem']->set(array('k'=>'fortress_num'.date('md').'_'.$_SESSION['id'],'v'=>max(0,intval($fortress_num)-1)));
+						die($giveResult === '200' ? '背包空间不足，请整理后再翻牌！' : '要塞奖励发放失败，请稍候再试！');
+					}
 					$flag = 1;
 					$prs = $_pm['mysql']->getOneRecord("SELECT name FROM props WHERE id={$inarr[0]}");
 					if(empty($retstr)){

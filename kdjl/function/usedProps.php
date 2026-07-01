@@ -800,11 +800,6 @@ else if ($rs['varyname'] == 12) // 宝箱类型。
 
 			$retstr = '';
 			if (is_array($propslist)) {
-				if ($snum < count($propslist)) {
-					$_pm['mysql']->query('ROLLBACK');
-					unLockItem($id);
-					die('背包空间不足！');
-				}
 				$boxUsed = $_pm['mysql']->query("UPDATE userbag
 								  SET sums=sums-1
 							 WHERE id={$id} and uid={$_SESSION['id']} and sums>0
@@ -823,7 +818,12 @@ else if ($rs['varyname'] == 12) // 宝箱类型。
 						//foreach($inarr as $inarrs)
 						//{
 						$prs =getBasePropsInfoById($inarr[0]);
-						$task->saveGetPropsMore($inarr[0], $inarr[1], $rs['pid'],0,$prs);
+						$giveResult = $task->saveGetPropsMore($inarr[0], $inarr[1], $rs['pid'],0,$prs);
+						if($giveResult !== true){
+							$_pm['mysql']->query('ROLLBACK');
+							unLockItem($id);
+							die($giveResult === '200' ? '背包空间不足！' : '礼包奖励发放失败！');
+						}
 
 						if (empty($retstr)) {
 							$retstr = '获得道具 ' . $prs['name'] . '&nbsp;' . $inarr[1] . ' 个';
@@ -863,7 +863,12 @@ else if ($rs['varyname'] == 12) // 宝箱类型。
 					if (rand(1, intval($inarr[2])) == 1)    //  rand hits
 					{
 						$prs=getBasePropsInfoById($inarr[0]);
-						$task->saveGetPropsMore($inarr[0], $inarr[1], $rs['pid'],0,$prs);
+						$giveResult = $task->saveGetPropsMore($inarr[0], $inarr[1], $rs['pid'],0,$prs);
+						if($giveResult !== true){
+							$_pm['mysql']->query('ROLLBACK');
+							unLockItem($id);
+							die($giveResult === '200' ? '背包空间不足！' : '随机奖励发放失败！');
+						}
 						$retstr = '获得道具 ' . $prs['name'] . ' ' . $inarr[1] . ' 个';
 						if ($inarr[3] == 2) {
 							$word = " ,使用{$rs['name']},幸运地得到自然女神的祝福,获得了 {$inarr[1]} 个{$prs['name']}";
@@ -966,11 +971,6 @@ else if ($rs['varyname'] == 22) // 宝箱类型。
 
 			$retstr = '';
 			if (is_array($propslist)) {
-				if ($snum < count($propslist)) {
-					$_pm['mysql']->query('ROLLBACK');
-					unLockItem($id);
-					die('背包空间不足！');
-				}
 				$stoneUsed = $_pm['mysql']->query("UPDATE userbag
 								  SET sums=sums-1
 							 WHERE id={$id} and uid={$_SESSION['id']} and sums>0
@@ -989,7 +989,12 @@ else if ($rs['varyname'] == 22) // 宝箱类型。
 						//foreach($inarr as $inarrs)
 						//{
 						$task = new task();
-						$task->saveGetPropsMore($inarr[0], $inarr[1], $rs['pid']);
+						$giveResult = $task->saveGetPropsMore($inarr[0], $inarr[1], $rs['pid']);
+						if($giveResult !== true){
+							$_pm['mysql']->query('ROLLBACK');
+							unLockItem($id);
+							die($giveResult === '200' ? '背包空间不足！' : '占卜奖励发放失败！');
+						}
 						$prs = $_pm['mysql']->getOneRecord("SELECT name FROM props WHERE id={$inarr[0]}");
 						if (empty($retstr)) {
 							$retstr = '获得道具 ' . $prs['name'] . '&nbsp;' . $inarr[1] . ' 个';
@@ -1029,7 +1034,12 @@ else if ($rs['varyname'] == 22) // 宝箱类型。
 					if (!isset($inarr[3])) $inarr[3] = 1;
 					if (rand(1, intval($inarr[2])) == 1)    //  rand hits
 					{
-						$task->saveGetPropsMore($inarr[0], $inarr[1], $rs['pid']);
+						$giveResult = $task->saveGetPropsMore($inarr[0], $inarr[1], $rs['pid']);
+						if($giveResult !== true){
+							$_pm['mysql']->query('ROLLBACK');
+							unLockItem($id);
+							die($giveResult === '200' ? '背包空间不足！' : '占卜奖励发放失败！');
+						}
 						$prs = $_pm['mysql']->getOneRecord("SELECT name FROM props WHERE id={$inarr[0]}");
 						$retstr = '获得道具 ' . $prs['name'] . ' ' . $inarr[1] . ' 个';
 
@@ -1803,11 +1813,11 @@ else if ($rs['varyname'] == 16) // 图纸合成类
 
 		$tsk = new task();
 		if (is_array($selectedGain)) {
-			$tsk->saveGetPropsMore($selectedGain['pid'], $selectedGain['count']);
-			if (mysql_errno($_pm['mysql']->getConn()) != 0) {
+			$giveResult = $tsk->saveGetPropsMore($selectedGain['pid'], $selectedGain['count']);
+			if ($giveResult !== true) {
 				$_pm['mysql']->query('ROLLBACK');
 				unLockItem($id);
-				die('合成奖励发放失败！');
+				die($giveResult === '200' ? '背包空间不足！' : '合成奖励发放失败！');
 			}
 		}
 

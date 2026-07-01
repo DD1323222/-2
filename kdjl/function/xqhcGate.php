@@ -170,10 +170,13 @@ if( $props1_info['varyname'] == 25 && $props2_info['varyname'] == 25 )
 			}
 		}
 		$bagid = $pam_system->saveGetPropsMore_return($gam_hc_info[2],1);	//发奖
-		if( empty($bagid) )
-		{
-			$getid = $_pm['mysql'] -> getOneRecord(" SELECT id FROM userbag WHERE uid = '".$_SESSION['id']."' AND pid = '".$gam_hc_info[2]."'");
-			$bagid = $getid['id'];
+		if($bagid === '200'){
+			$_pm['mysql']->query('ROLLBACK');
+			die('bagfull');
+		}
+		if($bagid === false){
+			$_pm['mysql']->query('ROLLBACK');
+			die('busy');
 		}
 		foreach( $props as $info )
 		{

@@ -59,38 +59,19 @@ class task
 	function completeTask($user, $taskinfo)
 	{
 		global $_pm;
+		if(!taskScheduleIsActive($taskinfo))
+		{
+			die("对不起，该任务当前不在开放时间内，只能放弃！");
+		}
+		$needvip = 0;
+		$ml = 0;
+		$log = '';
 		$bb = unserialize($_pm['mem']->get(MEM_BB_KEY));
 		
 		/**检查用户的包裹空间是否足够*/
 		$bag = $_pm['user']->getUserBagById($_SESSION['id']);
 		
-		$nowtime = date("YmdHis");
 		$fromnpc = explode("|",$taskinfo['fromnpc']);
-		$timearr = unserialize($_pm['mem']->get(MEM_TIME_KEY));
-		$taskarr = unserialize($_pm['mem']->get(MEM_TASK_KEY));
-		foreach($timearr as $tv)
-		{
-			if($tv['titles'] == "task")
-			{
-				$taskcheckarr[] = $tv;
-			}
-		}
-		$checknum = 10;
-		if(!empty($taskinfo['flags']))
-		{
-			foreach($timearr as $fv)
-			{
-				if($fv['days'] == $taskinfo['flags'] && $nowtime >= $fv['starttime'] && $nowtime <= $fv['endtime'])
-				{
-					$checknum = 11;
-				}
-			}
-		}
-		
-		if($checknum != 10)
-		{
-			die("对不起，该任务已经结束！");
-		}
 		
 		
 		$l=0;
@@ -102,7 +83,8 @@ class task
 				if ($y['sums']>0 && $y['zbing']==0) $l++;
 			}
 		}
-		if ($l+2 >= $user['maxbag']) return "您的背包空间不足，请预留至少3个背包格子，任务不能继续！";	
+		$hasItemReward = preg_match('/(^|,)(props|bprops):[1-9][0-9|]*:[1-9][0-9]*/',$taskinfo['result']) || preg_match('/(^|,)(itemrand|lvprops):/',$taskinfo['result']);
+		if ($hasItemReward && $l+2 >= $user['maxbag']) return "您的背包空间不足，请预留至少3个背包格子，任务不能继续！";	
 		
 
 		$user['tasklog'] .= ',see:'.$_REQUEST['n'];		//记录任务完成度
@@ -302,8 +284,8 @@ class task
 					$limitarr = explode(":",$v);
 					if($limitarr[0] == "cishu")
 					{
-						$today = strtotime(date('Ymd',time()));
-						$sql = "SELECT count(*) sl FROM tasklog WHERE uid = {$_SESSION['id']} and taskid = {$taskid} and time > {$today}";
+						$today = strtotime(date('Ymd',time())) - (max(1,intval($limitarr[2])) - 1) * 24 * 3600;
+						$sql = "SELECT count(*) sl FROM tasklog WHERE uid = {$_SESSION['id']} and taskid = {$taskinfo['id']} and time > {$today}";
 						$arr = $_pm['mysql'] -> getOneRecord($sql);
 						if(is_array($arr))
 						{
@@ -503,11 +485,23 @@ class task
 							
 						case "exp":      $taskgets .= $this->saveExp($tt)."<br/>";break;
 						case "props":    
-							$taskgets .= $this->saveProps($tt)."<br/>"; 
+							if(intval($tt[1]) < 1 || intval($tt[2]) < 1) break;
+							$rewardText = $this->saveProps($tt);
+							if($rewardText === false){
+								$this->m_db->query('ROLLBACK');
+								die('任务奖励发放失败，请预留足够背包空间后重试！');
+							}
+							$taskgets .= $rewardText."<br/>"; 
 							$log.=print_r($tt,1).'==>'.$taskgets.mysql_error();
 							break;
 						case "bprops":    
-							$taskgets .= $this->saveProps($tt,true)."<br/>"; 
+							if(intval($tt[1]) < 1 || intval($tt[2]) < 1) break;
+							$rewardText = $this->saveProps($tt,true);
+							if($rewardText === false){
+								$this->m_db->query('ROLLBACK');
+								die('任务奖励发放失败，请预留足够背包空间后重试！');
+							}
+							$taskgets .= $rewardText."<br/>"; 
 							$log.=print_r($tt,1).'==>'.$taskgets.mysql_error();
 						break;
 						//case "money":    $user['money']+=$tt[1];$taskgets .= ' 金币'.$tt[1]; break;
@@ -544,7 +538,7 @@ class task
 			$_pm['mysql'] -> query("INSERT INTO gamelog(ptime,seller,buyer,pnote,vary) VALUES ({$time},{$_SESSION['id']},{$taskinfo['id']},'{$taskinfo['title']}',6)");
 		}
 		//vip记录到此结束
-		$_pm['mysql']->query("UPDATE player
+		if(!$_pm['mysql']->query("UPDATE player
 								 SET money={$user['money']},
 								 	score={$user['score']},
 									prestige={$user['prestige']},
@@ -553,7 +547,10 @@ class task
 									 task='',
 									 tasklog=''
 							   WHERE id={$_SESSION['id']}
-				  ");
+				  ")){
+			$_pm['mysql']->query('ROLLBACK');
+			die('任务结算失败，请稍候再试！');
+		}
 		//return $taskinfo['title'] . ' 任务完成！您获得了 ' . $taskgets;
 		return $taskinfo['title'] . ' 任务完成！您获得了相应任务奖励！';
 	}
@@ -813,64 +810,50 @@ class task
 	
 	function clearTaskProps($need)
 	{
-		$delcount = 0;
-		$this->m_db->query('START TRANSACTION');
 		foreach($need as $x => $y)
 		{
 			$arr = explode(':', $y);
+			if ($arr[0] != "giveitem") continue;
 
-			if ($arr[0] == "giveitem")
-			{
-				$ar = explode('|',$arr[1]);
-				foreach($ar as $av){
-					$ret = $this->m_db->getRecords("SELECT id,sums
-		 									     FROM userbag 
-												WHERE pid = $av and uid={$_SESSION['id']} and zbing = 0 and sums>0
-												ORDER by sums desc
-											 ");
-					if(is_array($ret)){
-						foreach($ret as $v){
-							$sum += $v['sums'];
-						}
-					}else{
-						$this->m_db->query('ROLLBACK');
-						die('对不起，您没有这么多物品！');
-					}
-					$sums1 = 0;
-					foreach($ret as $v){
-						$newsum = $arr[2] - $sums1;
-						if($v['sums'] < $newsum){
-							$this->m_db->query("UPDATE userbag SET sums = 0 WHERE id = {$v['id']} AND zbing = 0");
-							if(mysql_affected_rows($this->m_db->getConn()) != 1){
-								$this->m_db->query('ROLLBACK');
-								die('对不起，您没有这么多物品！');
-							}
-							$sums1 += $v['sums'];
-						}
-						else if($v['sums'] >= $newsum)
-						{
-							$this->m_db->query("UPDATE userbag SET sums = sums - $newsum WHERE id = {$v['id']} AND zbing = 0 and sums >= $newsum");
-							if(mysql_affected_rows($this->m_db->getConn()) != 1){
-								$this->m_db->query('ROLLBACK');
-								die('对不起，您没有这么多物品！');
-							}
-							$sums1 += $v['sums'];
-							break;
-						}
-					}
-					/*if($sum < $arr[2]){
-					//echo $ret['sums'].'<br />'.$arr[2].'id'.$ret['id'];exit;
-						$this->m_db->query('ROLLBACK');
-						die('对不起，您没有这么多物品！');
-					}
-					$this->m_db->query("UPDATE userbag 
-													   SET sums=sums - {$arr[2]}
-													 WHERE id={$ret['id']}
-												  ");*/
+			$required = isset($arr[2]) ? intval($arr[2]) : 0;
+			$pidMap = array();
+			foreach(explode('|',$arr[1]) as $pid){
+				$pid = intval($pid);
+				if($pid > 0) $pidMap[$pid] = $pid;
+			}
+			if($required < 1 || count($pidMap) < 1){
+				$this->m_db->query('ROLLBACK');
+				die('任务所需物品配置错误！');
+			}
+
+			$pidList = implode(',',array_values($pidMap));
+			$ret = $this->m_db->getRecords("SELECT id,sums
+		 							     FROM userbag
+											WHERE pid IN ($pidList) AND uid={$_SESSION['id']} AND zbing=0 AND sums>0
+											ORDER BY sums DESC,id ASC
+											FOR UPDATE");
+			$total = 0;
+			if(is_array($ret)){
+				foreach($ret as $v) $total += intval($v['sums']);
+			}
+			if($total < $required){
+				$this->m_db->query('ROLLBACK');
+				die('对不起，您没有这么多物品！');
+			}
+
+			$remaining = $required;
+			foreach($ret as $v){
+				if($remaining < 1) break;
+				$take = min(intval($v['sums']),$remaining);
+				$id = intval($v['id']);
+				$sql = "UPDATE userbag SET sums=sums-$take WHERE id=$id AND uid={$_SESSION['id']} AND zbing=0 AND sums>=$take";
+				if(!$this->m_db->query($sql) || mysql_affected_rows($this->m_db->getConn()) != 1){
+					$this->m_db->query('ROLLBACK');
+					die('任务物品扣除失败，请稍候再试！');
 				}
-			}						
-		}// end foreach.
-		$this->m_db->query('COMMIT');		
+				$remaining -= $take;
+			}
+		}
 		return true;
 	}
 	
@@ -1114,7 +1097,7 @@ class task
 			{
 				if($user['jprestige'] <= $wwarr[1])
 				{
-					$moneyarr = $money[1];
+					$moneynum = $money[1];
 				}
 			}
 			else if(empty($wwarr[1]))
@@ -1266,6 +1249,9 @@ class task
 	{
 		if ($idlist == '' or $idlist == 0) return false;
 		global $_pm, $user, $bag;
+		if(!is_array($user)) $user = $_pm['user']->getUserById($_SESSION['id']);
+		$bagCount = $_pm['mysql']->getOneRecord("SELECT count(*) cnt FROM userbag WHERE uid={$_SESSION['id']} AND sums>0 AND zbing=0");
+		$l = is_array($bagCount) ? intval($bagCount['cnt']) : 0;
 
 		/*$l=0;
 		if (is_array($bag))
@@ -1283,6 +1269,8 @@ class task
 		
 		foreach ($arr as $k => $v)
 		{
+			$v = intval($v);
+			if($v < 1) return false;
 			$checkarr = array(1,1384,1206,920,921,922,1059,1060,1061,873,874,875,876,911,915,916,917,1048,1049,1050,1541,1648);
 			if(!empty($type) && !in_array($type,$checkarr))
 			{
@@ -1291,34 +1279,24 @@ class task
 				$_pm['mysql'] -> query($sql);
 			}
 			$rs = false;
-			$rs = $_pm['mysql']->getOneRecord("SELECT * FROM userbag WHERE uid={$_SESSION['id']} and pid={$v}");
+			$rs = $_pm['mysql']->getOneRecord("SELECT * FROM userbag WHERE uid={$_SESSION['id']} and pid={$v} ORDER BY zbing ASC,id ASC LIMIT 1 FOR UPDATE");
 			
 			if (is_array($rs))
 			{
 				if ($rs['vary'] == 1) // 可折叠道具.
 				{
 					$tt = time();
-					$_pm['mysql']->query("UPDATE userbag
+					if(!$_pm['mysql']->query("UPDATE userbag
 								   SET sums=sums+1,
 									   stime={$tt}
-								 WHERE id={$rs['id']}
-							  ");
+								 WHERE id={$rs['id']} AND uid={$_SESSION['id']}
+							  ")) return false;
 				}
 				else
 				{
-
-					
-					$l=0;
-					if (is_array($bag))
-					{
-						foreach ($bag as $x => $y)
-						{
-							if ($y['sums']>0 && $y['zbing']==0) $l++;
-						}
-					}
 					if ($l >= $user['maxbag']) return false;
 					
-					$_pm['mysql']->query("INSERT INTO userbag(uid,pid,sell,vary,sums,stime"
+					if(!$_pm['mysql']->query("INSERT INTO userbag(uid,pid,sell,vary,sums,stime"
 					.($flagTrade?",cantrade":"").
 					")
 								VALUES(
@@ -1330,20 +1308,11 @@ class task
 									   unix_timestamp()"
 								.($flagTrade?",1":"")."
 									  );
-							  ");
+							  ")) return false;
 				   $l++;
 			   }	   
 			}
 			else{
-			
-				$l=0;
-				if (is_array($bag))
-				{
-					foreach ($bag as $x => $y)
-					{
-						if ($y['sums']>0 && $y['zbing']==0) $l++;
-					}
-				}
 				if ($l >= $user['maxbag']) return false;
 				
 				$rs = $_pm['mem']->dataGet(array('k' => MEM_PROPS_KEY, 
@@ -1351,7 +1320,7 @@ class task
 									  ));
 				if (is_array($rs))
 				{
-					$_pm['mysql']->query("INSERT INTO userbag(uid,pid,sell,vary,sums,stime"
+					if(!$_pm['mysql']->query("INSERT INTO userbag(uid,pid,sell,vary,sums,stime"
 					.($flagTrade?",cantrade":"").
 					")
 								VALUES(
@@ -1363,12 +1332,13 @@ class task
 									   unix_timestamp()"
 								.($flagTrade?",1":"")."
 									  );
-							  ");
+							  ")) return false;
 					$l++;
-				}	
+				}else{
+					return false;
+				}
 			}		
 			unset($rs);
-			if ($l >= $user['maxbag']) return false;
 		}	
 		return true;
 	}
@@ -1382,145 +1352,106 @@ class task
 	*/
     function saveGetPropsMore($idlist, $num, $type = 0, $uid = 0,$propsrs=null)
     {
-        if ($uid == 0) $uid = $_SESSION['id'];
-        if ($idlist == '' or $idlist == 0) return false;
-        global $_pm, $user, $bag;
-        $user =$user?$user: $_pm['user']->getUserById($uid);
-        $bag =$bag?$bag: $_pm['user']->getUserBagById($uid);
-        $l = 0;
-        if (is_array($bag)) {
-            foreach ($bag as $x => $y) {
-                if ($y['sums'] > 0 && $y['zbing'] == 0) $l++;
-            }
-        }
-        if ($l >= $user['maxbag']) {
-            return "200";
-            exit;
-        }
-        $rs = false;
-        $rs = $_pm['mysql']->getOneRecord("SELECT * FROM userbag WHERE uid=$uid and pid={$idlist}");
-        if (is_array($rs)) {
-            if ($rs['vary'] == 1) // 可折叠道具.
-            {
-                $tt = time();
-                $_pm['mysql']->query("UPDATE userbag
-							   SET sums=sums+$num,
-								   stime={$tt}
-							 WHERE id={$rs['id']}
-						  ");
-            } else {
-                $_pm['mysql']->query("INSERT INTO userbag(uid,pid,sell,vary,sums,stime)
-							VALUES(
-								   $uid,
-								   '{$idlist}',
-								   '{$rs['sell']}',
-								   '{$rs['vary']}',
-								   {$num},
-								   unix_timestamp()
-								  );
-						  ");
-                $l++;
-            }
-        } else {
-            $rs =$propsrs?$propsrs:getBasePropsInfoById($idlist);
-            if (is_array($rs)) {
-                $_pm['mysql']->query("INSERT INTO userbag(uid,pid,sell,vary,sums,stime)
-							VALUES(
-								   $uid,
-								   '{$idlist}',
-								   '{$rs['sell']}',
-								   '{$rs['vary']}',
-								   {$num},
-								   unix_timestamp()
-								  )
-						  ");
-                $l++;
-            }
-        }
-        unset($rs);
-        if ($l >= $user['maxbag']) return false;
-        return true;
+		global $_pm;
+		$uid = intval($uid);
+		if($uid < 1) $uid = intval($_SESSION['id']);
+		$pid = intval($idlist);
+		$num = intval($num);
+		if($uid < 1 || $pid < 1 || $num < 1) return false;
+
+		$userInfo = $_pm['user']->getUserById($uid);
+		if(!is_array($userInfo) || intval($userInfo['maxbag']) < 1) return false;
+
+		$propsInfo = $propsrs;
+		if(!is_array($propsInfo) || intval($propsInfo['id']) != $pid){
+			$propsInfo = getBasePropsInfoById($pid);
+		}
+		if(!is_array($propsInfo)) return false;
+
+		$vary = intval($propsInfo['vary']);
+		$sell = intval($propsInfo['sell']);
+		$now = time();
+		if($vary == 1){
+			$bagRow = $_pm['mysql']->getOneRecord("SELECT id FROM userbag WHERE uid=$uid AND pid=$pid AND vary=1 AND zbing=0 AND sums>0 ORDER BY id LIMIT 1 FOR UPDATE");
+			if(is_array($bagRow)){
+				$bagId = intval($bagRow['id']);
+				$sql = "UPDATE userbag SET sums=sums+$num,stime=$now WHERE id=$bagId AND uid=$uid AND pid=$pid AND vary=1";
+				if(!$_pm['mysql']->query($sql) || mysql_affected_rows($_pm['mysql']->getConn()) != 1) return false;
+				return true;
+			}
+			$neededSlots = 1;
+		}else{
+			$neededSlots = $num;
+		}
+
+		$bagCount = $_pm['mysql']->getOneRecord("SELECT count(*) cnt FROM userbag WHERE uid=$uid AND sums>0 AND zbing=0");
+		if(!is_array($bagCount)) return false;
+		if(intval($bagCount['cnt']) + $neededSlots > intval($userInfo['maxbag'])) return "200";
+
+		$values = array();
+		if($vary == 1){
+			$values[] = "($uid,$pid,$sell,$vary,$num,$now)";
+		}else{
+			for($i=0;$i<$num;$i++){
+				$values[] = "($uid,$pid,$sell,$vary,1,$now)";
+			}
+		}
+		$sql = "INSERT INTO userbag(uid,pid,sell,vary,sums,stime) VALUES ".implode(',',$values);
+		if(!$_pm['mysql']->query($sql)) return false;
+		return true;
     }
 
 	function saveGetPropsMore_return($idlist,$num,$type = 0,$uid=0)
 	{
-		if($uid==0)$uid=$_SESSION['id'];
-		if ($idlist == '' or $idlist == 0) return false;
-		global $_pm, $user, $bag;
-		$user = $_pm['user']->getUserById($uid);
-		$bag = $_pm['user']->getUserBagById($uid);
-		$l=0;
-		if (is_array($bag)){
-			foreach ($bag as $x => $y){
-				if ($y['sums']>0 && $y['zbing']==0) $l++;
+		global $_pm;
+		$uid = intval($uid);
+		if($uid < 1) $uid = intval($_SESSION['id']);
+		$pid = intval($idlist);
+		$num = intval($num);
+		$type = intval($type);
+		if($uid < 1 || $pid < 1 || $num < 1) return false;
+
+		$userInfo = $_pm['user']->getUserById($uid);
+		$propsInfo = getBasePropsInfoById($pid);
+		if(!is_array($userInfo) || !is_array($propsInfo) || intval($userInfo['maxbag']) < 1) return false;
+
+		$vary = intval($propsInfo['vary']);
+		$sell = intval($propsInfo['sell']);
+		$now = time();
+		if($vary == 1){
+			$bagRow = $_pm['mysql']->getOneRecord("SELECT id FROM userbag WHERE uid=$uid AND pid=$pid AND vary=1 AND zbing=0 AND sums>0 ORDER BY id LIMIT 1 FOR UPDATE");
+			if(is_array($bagRow)){
+				$bagId = intval($bagRow['id']);
+				$sql = "UPDATE userbag SET sums=sums+$num,stime=$now WHERE id=$bagId AND uid=$uid AND pid=$pid AND vary=1";
+				if(!$_pm['mysql']->query($sql) || mysql_affected_rows($_pm['mysql']->getConn()) != 1) return false;
+				return $bagId;
 			}
+			$neededSlots = 1;
+		}else{
+			$neededSlots = $num;
 		}
-		if ($l >= $user['maxbag']){
-			return "200";
-			exit;
+
+		$bagCount = $_pm['mysql']->getOneRecord("SELECT count(*) cnt FROM userbag WHERE uid=$uid AND sums>0 AND zbing=0");
+		if(!is_array($bagCount)) return false;
+		if(intval($bagCount['cnt']) + $neededSlots > intval($userInfo['maxbag'])) return "200";
+
+		$values = array();
+		if($vary == 1){
+			$values[] = "($uid,$pid,$sell,$vary,$num,$now)";
+		}else{
+			for($i=0;$i<$num;$i++) $values[] = "($uid,$pid,$sell,$vary,1,$now)";
 		}
-		//foreach ($arr as $k => $v)
-		//{
-		$rs = false;
+		$sql = "INSERT INTO userbag(uid,pid,sell,vary,sums,stime) VALUES ".implode(',',$values);
+		if(!$_pm['mysql']->query($sql)) return false;
+		$bagId = intval($_pm['mysql']->last_id());
+		if($bagId < 1) return false;
+
 		$checkarr = array(1,1384,1206,920,921,922,1059,1060,1061,873,874,875,876,911,915,916,917,1048,1049,1050,1541,1648);
-		if(!empty($type) && !in_array($type,$checkarr))
-		{
-			$tis = time();
-			$sql = "INSERT INTO libao (pname,flag,cet,nums) values ({$idlist},{$type},{$tis},{$num})";
-			$_pm['mysql'] -> query($sql);
+		if($type > 0 && !in_array($type,$checkarr)){
+			$sql = "INSERT INTO libao (pname,flag,cet,nums) values ($pid,$type,$now,$num)";
+			if(!$_pm['mysql']->query($sql)) return false;
 		}
-		$rs = $_pm['mysql']->getOneRecord("SELECT * FROM userbag WHERE uid=$uid and pid={$idlist}");
-		if (is_array($rs))
-		{
-			if ($rs['vary'] == 1) // 可折叠道具.
-			{
-				$tt = time();
-				$_pm['mysql']->query("UPDATE userbag
-							   SET sums=sums+$num,
-								   stime={$tt}
-							 WHERE id={$rs['id']}
-						  ");
-				$ret_thing = $rs['id'];
-			}
-			else
-			{
-				$ret_thing=$_pm['mysql']->query("INSERT INTO userbag(uid,pid,sell,vary,sums,stime)
-							VALUES(
-								   $uid,
-								   '{$idlist}',
-								   '{$rs['sell']}',
-								   '{$rs['vary']}',
-								   {$num},
-								   unix_timestamp()
-								  );
-						  ");
-			   $l++;
-		   }	   
-		}
-		else{
-			$rs = $_pm['mem']->dataGet(array('k' => MEM_PROPS_KEY, 
-									'v' => "if(\$rs['id'] == '{$idlist}') \$ret=\$rs;"
-								  ));
-			if (is_array($rs))
-			{
-				$_pm['mysql']->query("INSERT INTO userbag(uid,pid,sell,vary,sums,stime)
-							VALUES(
-								   $uid,
-								   '{$idlist}',
-								   '{$rs['sell']}',
-								   '{$rs['vary']}',
-								   {$num},
-								   unix_timestamp()
-								  )
-						  ");
-				$ret_thing = 0;
-				$l++;
-			}	
-		}		
-		unset($rs);
-		if ($l >= $user['maxbag']) return false;
-		//}	
-		return $ret_thing;
+		return $bagId;
 	}
 
 	/**
@@ -1560,39 +1491,13 @@ class task
 	{
 		$checks = 1;
 		global $_pm;
+		if(!taskScheduleIsActive($taskinfo)) return false;
 		$bb = unserialize($_pm['mem']->get(MEM_BB_KEY));
 		
 		/**检查用户的包裹空间是否足够*/
 		$bag = $_pm['user']->getUserBagById($_SESSION['id']);
 		$petsAll	= $_pm['user']->getUserPetById($_SESSION['id']);
-		$nowtime = date("YmdHis");
 		$fromnpc = explode("|",$taskinfo['fromnpc']);
-		$timearr = unserialize($_pm['mem']->get(MEM_TIME_KEY));
-		$taskarr = unserialize($_pm['mem']->get(MEM_TASK_KEY));
-		foreach($timearr as $tv)
-		{
-			if($tv['titles'] == "task")
-			{
-				$taskcheckarr[] = $tv;
-			}
-		}
-		$checknum = 10;
-		if(!empty($taskinfo['flags']))
-		{
-			foreach($timearr as $fv)
-			{
-				if($fv['days'] == $taskinfo['flags'] && $nowtime >= $fv['starttime'] && $nowtime <= $fv['endtime'])
-				{
-					$checknum = 11;
-				}
-			}
-		}
-		
-		if($checknum != 10)
-		{
-			//die("对不起，该任务已经结束！");
-			$checks = 2;
-		}
 		
 		
 		$l=0;
@@ -1832,7 +1737,8 @@ class task
 					$limitarr = explode(":",$v);
 					if($limitarr[0] == "cishu")
 					{
-						$sql = 'SELECT count(*) dif FROM tasklog WHERE date_format(from_unixtime(time),"%Y%m%d") > '.date('Ymd',time())." AND uid = {$_SESSION['id']} and taskid = {$taskinfo['id']}";
+						$today = strtotime(date('Ymd',time())) - (max(1,intval($limitarr[2])) - 1) * 24 * 3600;
+						$sql = "SELECT count(*) dif FROM tasklog WHERE uid = {$_SESSION['id']} and taskid = {$taskinfo['id']} and time > {$today}";
 						$arr = $_pm['mysql'] -> getOneRecord($sql);
 						if(is_array($arr))
 						{

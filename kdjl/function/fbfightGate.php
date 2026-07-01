@@ -95,15 +95,6 @@ if ( isset($need_cold_skill_id_arr[$id]) )
 }
 $gid		= intval($_REQUEST['g']);	 	//  怪物ID
 $db_bb		= array();	//	数据库中宝宝的原始属性。
-$doubleexp = unserialize($_pm['mem']->get(MEM_TIME_KEY));
-foreach($doubleexp as $v)
-{
-	if($v['titles'] == "exp")
-	{
-		$newdoubleexparr = $v;
-	}
-}
-$nowtime = date("YmdHis");
 $user		= $_pm['user']->getUserById($_SESSION['id']);
 //$user	 = unserialize($_pm['mem']->get(MEM_USER_KEY));
 
@@ -795,7 +786,7 @@ if($rs['s_uhp']<0||$rs['s_ump']<0){
 		/** 特殊道具检测 */
 		$uProps = usedProps($user);
 //$gs['exps'] = $gs['exps']*100;
-		/*if ($uProps !== false)
+		if ($uProps !== false)
 		{
 			if($_SESSION['exptype'.$_SESSION['id']] != 1)
 			{
@@ -810,95 +801,6 @@ if($rs['s_uhp']<0||$rs['s_ump']<0){
 				else
 				{
 					$gs['exps'] = intval($gs['exps']*$uProps['double']);
-				}
-			}
-		}*/
-		
-		if ($uProps !== false)
-		{
-			$doubleexp = unserialize($_pm['mem']->get(MEM_TIME_KEY));
-			foreach($doubleexp as $v)
-			{
-				if($v['titles'] == "exp")
-				{
-					$newdoubleexparr[$v['starttime'].'-'.$v['endtime']] = $v['days'];
-				}else if($v['titles'] == "exp1"){
-					$newdoubleexparr1[$v['starttime'].'-'.$v['endtime']] = $v['days'];
-				}
-			}
-			$nowtime = date("YmdHis");
-			if(is_array($newdoubleexparr))
-			{
-				$k = "";
-				$v = "";
-				foreach($newdoubleexparr as $k => $v)
-				{
-					if(!empty($k))
-					{
-						$arr = "";
-						$arr = explode("-",$k);
-						if($nowtime >= $arr[0] && $nowtime <= $arr[1])
-						{
-							$ddd = $v;
-						}
-					}
-				}
-			}
-			if(is_array($newdoubleexparr1))
-			{
-				$week = date('w');
-				$time = date('Hi');
-				$k = "";
-				$v = "";
-				foreach($newdoubleexparr1 as $k => $v)
-				{
-					if(!empty($k))
-					{
-						$arr = "";
-						$arr = explode("-",$k);
-						$narr = explode('|',$arr[0]);
-						if($narr[0] == $week && $time >= $narr[1] && $time <= $arr[1])
-						{
-							$ddd = $v;
-						}
-					}
-				}
-			}
-			
-			if($ddd > 0)
-			{
-				if($_SESSION['exptype'.$_SESSION['id']] != 1)
-				{
-					$gs['exps'] = intval($gs['exps']*$uProps['double']) * $ddd;
-				}
-				else
-				{
-					if(!empty($uProps['doubleexp']))
-					{
-						$gs['exps'] = intval($gs['exps']*$uProps['double']*$uProps['doubleexp']) * $ddd;
-					}
-					else
-					{
-						$gs['exps'] = intval($gs['exps']*$uProps['double']) * $ddd;
-					}
-				}
-			}
-			else
-			{
-				if($_SESSION['exptype'.$_SESSION['id']] != 1)
-				{
-					$gs['exps'] = intval($gs['exps']*$uProps['double']);
-				}
-				else
-				{
-					if(!empty($uProps['doubleexp']))
-					{
-						$gs['exps'] = intval($gs['exps']*$uProps['double']*$uProps['doubleexp']);
-					}
-					else
-					{
-						$gs['exps'] = intval($gs['exps']*$uProps['double']);
-					}
 				}
 			}
 		}

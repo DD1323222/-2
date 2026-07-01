@@ -76,12 +76,21 @@ if(!is_array($a)){
 	realseLock();
 	die('服务器繁忙，请稍候再试！');
 }
+function slGiveProps($deal,$pid,$num)
+{
+	global $_pm;
+	$giveResult = $deal->saveGetPropsMore($pid,$num);
+	if($giveResult !== true){
+		$_pm['mysql']->query('ROLLBACK');
+		die($giveResult === '200' ? '背包空间不足，请整理后再试！' : '扫雷奖励发放失败，请稍候再试！');
+	}
+}
 $res = $_pm['mysql'] -> getOneRecord("SELECT F_saolei_points FROM player_ext WHERE uid = ".$_SESSION['id']);
 if($res['F_saolei_points']  == 3 || $res['F_saolei_points'] == 6 || $res['F_saolei_points'] == 9)
 {
 	if(rand(1,10) > 9)
 	{
-		$deal->saveGetPropsMore(4038,1);	//赠送复活卡
+		slGiveProps($deal,4038,1);	//赠送复活卡
 		$get_fh = 1;
 	}
 }
@@ -133,7 +142,7 @@ if(count($mid_arr) == 1)
 	if($luck >= $num[0] && $luck <= $num[1])	//中好东西了
 	{
 		$this_thing_end[$chooseid] = $prize_info_best[$res['F_saolei_points']]['id'];
-		$deal->saveGetPropsMore($this_thing_end[$chooseid],1);	//发奖品	
+		slGiveProps($deal,$this_thing_end[$chooseid],1);	//发奖品	
 	}
 	else										//中普通东西
 	{
@@ -150,7 +159,7 @@ if(count($mid_arr) == 1)
 			if($luck >= $othingnum[0] && $luck <= $othingnum[1])
 			{
 				$this_thing_end[$chooseid] = $oarr[0];
-				$deal->saveGetPropsMore($this_thing_end[$chooseid],1);	//发奖品
+				slGiveProps($deal,$this_thing_end[$chooseid],1);	//发奖品
 				break;
 			}
 		}
@@ -185,7 +194,7 @@ else
 				$word = ",通过扫雷第".$res['F_saolei_points']."关,得到本关最极品奖励:".$best_props_name['name'];
 				$_pm['mysql'] -> query("INSERT INTO gamelog (seller,buyer,ptime,pnote,vary) VALUES({$_SESSION['id']},{$_SESSION['id']},".time().",'".$res['F_saolei_points']."关最极品:".$best_props_name['name']."',254)");
 			}
-			$deal->saveGetPropsMore($prize_info_best[$res['F_saolei_points']]['id'],1);	//发奖品
+			slGiveProps($deal,$prize_info_best[$res['F_saolei_points']]['id'],1);	//发奖品
 			if($gonggao_interface == '')
 			{
 				$deal ->saveGword($word);
@@ -254,7 +263,7 @@ else
 			if($luck >= $othingnum[0] && $luck <= $othingnum[1])
 			{
 				$this_thing_end_chooseid = $oarr[0];
-				$deal->saveGetPropsMore($this_thing_end_chooseid,1);	//发奖品
+				slGiveProps($deal,$this_thing_end_chooseid,1);	//发奖品
 				$_pm['mysql'] -> query("INSERT INTO gamelog (seller,buyer,ptime,pnote,vary) VALUES({$_SESSION['id']},{$_SESSION['id']},".time().",'".$res['F_saolei_points']."关普通:".$this_thing_end_chooseid."',254)");
 				break;
 			}

@@ -40,49 +40,36 @@ $week = date("N", time());
 $hourM= date("H:i", time());
 
 $battletimearr = unserialize($_pm['mem']->get(MEM_TIME_KEY));
-
-foreach($battletimearr as $v)
-{
-	if($v['titles'] == "battle")
-	{
-		if(empty($days))
-		{
-			$days = $v['days'];
-		}
-		else
-		{
-			$days .= ",".$v['days'];
-		}
-	}
-}
-
-foreach($battletimearr as $bv)
+$battleDays = array();
+$battleStart = '';
+$battleEnd = '';
+if(is_array($battletimearr)) foreach($battletimearr as $bv)
 {
 	if($bv['titles'] != "battle")
 	{
 		continue;
 	}
-	if($week == $bv['days'] && $hourM >= $bv['starttime'] && $hourM <= $bv['endtime'])
+	foreach(weeklyDayList($bv['days']) as $battleDay) $battleDays[$battleDay] = $battleDay;
+	if($battleStart === '')
+	{
+		$battleStart = $bv['starttime'];
+		$battleEnd = $bv['endtime'];
+	}
+	if(isWeeklyDayTimeActive($bv['days'], $bv['starttime'], $bv['endtime'], $week, $hourM))
 	{
 		$checkstr = 1;
 		break;
-	}
-	else if ($week != $bv['days'] || ($hourM < $bv['starttime'] || $hourM > $bv['endtime']) )
-	{
-		$str = '战场未开启！战场开放时间：每周'
-			 . str_replace(array(1,2,3,4,5,6,7),array('一','二','三','四','五','六','日'),$days)
-			 .' '.$bv['starttime']. '点-'. $bv['endtime'] .'点开放！';
-	}
-	else if ($battleinfo['ends'] == 1)
-	{
-		$str = '战场已经结束！战场开放时间：每周'
-			 . str_replace(array(1,2,3,4,5,6,7),array('一','二','三','四','五','六','日'),$days)
-			 .' '.$bv['starttime']. '点-'. $bv['endtime'] .'点开放！';
 	}
 }
 
 if(empty($checkstr))
 {
+	$str = '战场未开启！';
+	if(count($battleDays) > 0)
+	{
+		$str .= '战场开放时间：每周' . weeklyDaysText(implode('|', $battleDays))
+			 . ' ' . $battleStart . '-' . $battleEnd . '开放！';
+	}
 	die($str);
 }
 // ####### end ##############################

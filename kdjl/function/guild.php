@@ -628,12 +628,23 @@ if($op == 'show'){
 	if ($gid == 0) {
 		die('');
 	}
+	require_once('../sec/dblock_fun.php');
+	$a = getLock($_SESSION['id']);
+	if(!is_array($a)){
+		realseLock();
+		die('服务器繁忙，请稍候再试！');
+	}
 	
 	//判断时间 一天只能领取一次
-	$user = $_pm['mysql'] -> getOneRecord("SELECT get_welfare_time FROM player_ext WHERE uid = {$_SESSION['id']}");
+	$user = $_pm['mysql'] -> getOneRecord("SELECT get_welfare_time FROM player_ext WHERE uid = {$_SESSION['id']} FOR UPDATE");
+	if(!is_array($user)){
+		realseLock();
+		die('2');
+	}
 	if ($user['get_welfare_time'] > 0) {
 		$yes = date('Ymd',time()-24*3600);
 		if ($user['get_welfare_time'] > $yes) {
+			realseLock();
 			die('3');//已经领过了，今天不能再领
 		}
 	}
@@ -641,11 +652,13 @@ if($op == 'show'){
 	
 	$check = $_pm['mysql'] -> getOneRecord("SELECT guild_id FROM guild_members WHERE guild_id = $gid AND member_id = {$_SESSION['id']}");
 	if (!is_array($check)) {
+		realseLock();
 		die('1');//您不在此家族，不能领取这个家族的家族福利!
 	}
 	
 	$guild = $_pm['mysql'] -> getOneRecord("SELECT welfare FROM guild_settings,guild WHERE guild_settings.level = guild.level AND guild.id = $gid");
 	if (!is_array($guild) || $guild['welfare'] == '') {
+		realseLock();
 		die('2');//数据读取有误!
 	}
 	$propslist = explode(',', $guild['welfare']);	
@@ -664,7 +677,11 @@ if($op == 'show'){
 				//{
 				$task = new task();
 				if (rand(1, intval($inarr[1])) == 1){
-					$task->saveGetPropsMore($inarr[0],$inarr[2]);//1424:100:1,747:10:2,95:1:1
+					$giveResult = $task->saveGetPropsMore($inarr[0],$inarr[2]);//1424:100:1,747:10:2,95:1:1
+					if($giveResult !== true){
+						$_pm['mysql']->query('ROLLBACK');
+						die($giveResult === '200' ? '背包空间不足，请整理后再领取！' : '家族福利发放失败，请稍候再试！');
+					}
 					$prs = $_pm['mysql']->getOneRecord("SELECT name FROM props WHERE id={$inarr[0]}");
 					if(empty($retstr))
 					{
@@ -679,7 +696,11 @@ if($op == 'show'){
 		} // end foreach
 		// del props current bag.
 		$time = date('Ymd');
-		$_pm['mysql'] -> query("UPDATE player_ext SET get_welfare_time = '$time' WHERE uid = {$_SESSION['id']}");
+		if(!$_pm['mysql'] -> query("UPDATE player_ext SET get_welfare_time = '$time' WHERE uid = {$_SESSION['id']} AND (get_welfare_time IS NULL OR get_welfare_time <> '$time')") || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+			$_pm['mysql']->query('ROLLBACK');
+			die('家族福利状态保存失败，请稍候再试！');
+		}
+		realseLock();
 		echo $retstr;
 		exit;
 	}
@@ -793,7 +814,7 @@ if($op == 'show'){
 		{
 			continue;
 		}
-		if($week == $bv['days'] && ($hourM >= $bv['starttime'] && $hourM < $bv['endtime'])){//战场已经开始
+		if(isWeeklyDayTimeActive($bv['days'], $bv['starttime'], $bv['endtime'], $week, $hourM, false)){//战场已经开始
 			die('1');//已经开始不能再下战书
 		}
 	}
@@ -859,7 +880,7 @@ if($op == 'show'){
 		{
 			continue;
 		}
-		if($week == $bv['days'] && ($hourM >= $bv['starttime'] && $hourM < $bv['endtime'])){//战场已经开始
+		if(isWeeklyDayTimeActive($bv['days'], $bv['starttime'], $bv['endtime'], $week, $hourM, false)){//战场已经开始
 			die('1');//已经开始不能再接受
 		}
 	}

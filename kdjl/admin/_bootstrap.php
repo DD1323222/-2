@@ -27,6 +27,25 @@ function adminRedirect($url)
 	exit;
 }
 
+function adminNextFreeNumericId($rows, $field)
+{
+	$used = array();
+	if (is_array($rows))
+	{
+		foreach ($rows as $row)
+		{
+			if (!isset($row[$field])) continue;
+			$id = intval($row[$field]);
+			if ($id > 0) $used[$id] = true;
+		}
+	}
+	for ($id = 1; $id < 2147483647; $id++)
+	{
+		if (!isset($used[$id])) return $id;
+	}
+	return false;
+}
+
 function adminRefreshPropsCache($db, $mem)
 {
 	$rows = $db->getRecords('SELECT * FROM props ORDER BY stime');
@@ -44,10 +63,64 @@ function adminRefreshPropsCache($db, $mem)
 	return $ok;
 }
 
+function adminRefreshGpcCache($db, $mem, $changedIds)
+{
+	$rows = $db->getRecords('SELECT * FROM gpc ORDER BY id');
+	if (!is_array($rows)) return false;
+	$byId = array();
+	foreach ($rows as $row) $byId[intval($row['id'])] = $row;
+	$ok = $mem->set(array('k' => 'db_gpc', 'v' => $rows));
+	$ok = $mem->set(array('k' => 'db_gpcid', 'v' => $byId)) && $ok;
+	if (is_array($changedIds))
+	{
+		foreach ($changedIds as $id) $mem->del('base_gpc_info_' . intval($id));
+	}
+	return $ok;
+}
+
 function adminRefreshWelcomeCache($db, $mem)
 {
 	$rows = $db->getRecords('SELECT * FROM welcome ORDER BY Id');
 	return is_array($rows) ? $mem->set(array('k' => 'db_welcome', 'v' => $rows)) : false;
+}
+
+function adminRefreshTimeConfigCache($db, $mem)
+{
+	$rows = $db->getRecords('SELECT * FROM timeconfig ORDER BY Id');
+	if (!is_array($rows)) return false;
+	$byTitle = array();
+	foreach ($rows as $row) $byTitle[$row['titles']][] = $row;
+	$ok = $mem->set(array('k' => MEM_TIME_KEY, 'v' => $rows));
+	$ok = $mem->set(array('k' => MEM_TIMENEW_KEY, 'v' => $byTitle)) && $ok;
+	return $ok;
+}
+
+function adminRefreshTaskCache($db, $mem)
+{
+	$rows = $db->getRecords('SELECT * FROM task ORDER BY id');
+	if (!is_array($rows)) return false;
+	$byId = array();
+	foreach ($rows as $row) $byId[intval($row['id'])] = $row;
+	return $mem->set(array('k' => MEM_TASK_KEY, 'v' => $byId));
+}
+
+function adminNormalizeClockInput($value)
+{
+	$minutes = clockTimeToMinutes($value);
+	if ($minutes === false) return false;
+	return sprintf('%02d:%02d', floor($minutes / 60), $minutes % 60);
+}
+
+function adminClockInput($value)
+{
+	$clock = adminNormalizeClockInput($value);
+	return $clock === false ? '' : $clock;
+}
+
+function adminPostedDays($value)
+{
+	if (!is_array($value)) return array();
+	return weeklyDayList(implode('|', $value));
 }
 
 function adminNormalizeDate($value)

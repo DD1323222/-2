@@ -20,7 +20,7 @@ require_once('../sec/dblock_fun.php');
 secStart($_pm['mem']);
 //$interface_top = "http://pmmg1.webgame.com.cn/interface/kffight_status.php";
 $user = $_pm['user']->getUserById($_SESSION['id']);
-//$top = unserialize($_pm['mem']->get(MEM_TOP_KEY));
+$top = unserialize($_pm['mem']->get(MEM_TOP_KEY));
 //跨服争霸
 //$res_status = curl_get($interface_top."?status=1");	//排名
 

@@ -51,14 +51,28 @@ if($title_vary == 1)//显示大类以及默认接受任务内容
 	$title_arr .= "@@@@";//以下为活动显示
 	$active_content = "";
 	$week = date('N',time());
-	$active = $_pm['mysql']->getRecords("select * from system_activity where week = {$week}");
+	$activeRows = $_pm['mysql']->getRecords("select * from system_activity where week between 1 and 7 order by id");
+	$active = array();
+	if(is_array($activeRows))
+	{
+		foreach($activeRows as $activeRow)
+		{
+			$timeParts = explode('|', trim((string)$activeRow['time']), 2);
+			if(count($timeParts) === 2 && clockTimeToMinutes($timeParts[0]) !== false && clockTimeToMinutes($timeParts[1]) !== false)
+			{
+				if(!isWeeklyDayTimeActive($activeRow['week'], $timeParts[0], $timeParts[1], $week)) continue;
+			}
+			else if(!weeklyDaysContain($activeRow['week'], $week)) continue;
+			$active[] = $activeRow;
+		}
+	}
 	
 	$title_arr .= '<ul>';
-	if(is_array($active))
+	if(count($active) > 0)
 	{
 		$j = 1;
 		$sum = count($active);
-		$kong = 4-$sum;
+		$kong = max(0, 4-$sum);
 		foreach($active as $ac_key => $ac_value)
 		{
 			if(is_array($ac_value))
@@ -118,30 +132,11 @@ if($title_vary == 2)//显示每一个大类下面的任务
 	{
 		$nowtime = date("YmdHis");
 		$timearr = unserialize($_pm['mem']->get(MEM_TIME_KEY));
-		foreach($timearr as $tv)
-		{
-			if($tv['titles'] == "task")
-			{
-				$taskcheckarr[] = $tv;
-			}
-		} 
 		$taskArr = array();
 		$rwlidarr = array();
 		foreach($task_details as $v_key => $v)//color 的任务
 		{
-			$flagsarrcheck = 1;
-			if(!empty($v['flags']))
-			{
-				foreach($taskcheckarr as $vx)
-
-				{
-					if($v['flags'] == $vx['days'] && $nowtime >= $vx['starttime'] && $nowtime <= $vx['endtime'])
-					{
-						$flagsarrcheck = 2;
-					}
-				}
-			}
-			if($flagsarrcheck != 1)
+			if(!taskScheduleIsActive($v, $timearr, $nowtime))
 			{
 				continue;
 			}
@@ -312,24 +307,14 @@ if($title_vary == 2)//显示每一个大类下面的任务
 					{
 						continue;
 					}
-						$checknum = 10;
-					if(!empty($taskinfo['flags']))
-					{
-						foreach($taskcheckarr as $fv)
-						{
-							if($fv['days'] == $taskinfo['flags'] && $nowtime >= $fv['starttime'] && $nowtime <= $fv['endtime'])
-							{
-								$checknum = 11;
-							}
-						}
-					}
-					if($checknum != 10)
+					$nextTask = isset($task_all[$a[1]]) ? $task_all[$a[1]] : null;
+					if(!taskScheduleIsActive($nextTask, $timearr, $nowtime))
 					{
 						continue;
 					}
 					//echo $taskinfo['fromnpc'];//2|1
-					$title_small = explode('|',$taskinfo['fromnpc']);
-					$title_small_next[$title_small[1]] = $task_all[$a[1]];
+					$title_small = explode('|',$nextTask['fromnpc']);
+					$title_small_next[$title_small[1]] = $nextTask;
 					//print_r($title_small_next);
 				}
 				else//没做过此任务链，从第一条开始做。
@@ -338,18 +323,7 @@ if($title_vary == 2)//显示每一个大类下面的任务
 					{
 						if($t['xulie'] == $i && $t['hide'] == 1)
 						{
-							$checknum = 10;
-							if(!empty($t['flags']))
-							{
-								foreach($taskcheckarr as $fv)
-								{
-									if($fv['days'] == $t['flags'] && $nowtime >= $fv['starttime'] && $nowtime <= $fv['endtime'])
-									{
-										$checknum = 11;
-									}
-								}
-							}
-							if($checknum != 10)
+							if(!taskScheduleIsActive($t, $timearr, $nowtime))
 							{
 								continue;
 							}

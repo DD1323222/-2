@@ -19,6 +19,34 @@ if(!isset($_SESSION['manager']) || $_SESSION['manager'] != 1)
 
 require_once("loginCheck.php");
 //require_once("../function/cwords.php");
+
+function grantNewPlayerRewards($db, $uid)
+{
+	$rewardCounts = array(1308 => 15, 1241 => 2, 912 => 10, 1039 => 1, 1992 => 5, 2493 => 1, 2047 => 1);
+	$rows = $db->getRecords('SELECT id,sell,vary FROM props WHERE id IN (' . implode(',', array_keys($rewardCounts)) . ')');
+	if (!is_array($rows) || count($rows) !== count($rewardCounts)) return false;
+	$values = array();
+	$now = time();
+	foreach ($rows as $row)
+	{
+		$pid = intval($row['id']);
+		if (!isset($rewardCounts[$pid])) continue;
+		$count = intval($rewardCounts[$pid]);
+		$sell = intval($row['sell']);
+		$vary = intval($row['vary']);
+		if ($vary === 1)
+		{
+			$values[] = '(' . intval($uid) . ",{$pid},{$sell},{$vary},{$count},{$now})";
+		}
+		else
+		{
+			for ($i = 0; $i < $count; $i++) $values[] = '(' . intval($uid) . ",{$pid},{$sell},{$vary},1,{$now})";
+		}
+	}
+	if (count($values) !== count($rewardCounts)) return false;
+	return $db->query('INSERT INTO userbag(uid,pid,sell,vary,sums,stime) VALUES ' . implode(',', $values)) ? true : false;
+}
+
 $battletimearr = unserialize($_pm['mem']->get(MEM_TIME_KEY));
 foreach($battletimearr as $v)
 {
@@ -171,18 +199,13 @@ if($_REQUEST['bname']!='' && $_REQUEST['bc']!='')
 					  ");
 			$uinfoNicknameSql = $_pm['mysql']->escape($uinfo['nickname']);
 			$_pm['mysql']->query("UPDATE player SET mbid = {$ids['id']} WHERE nickname='{$uinfoNicknameSql}'");
-			if($_SESSION['registertype'] == 'prize'){
-				$_pm['mysql']->query("INSERT INTO userbag(uid,pid,sell,vary,sums,stime,cantrade)
-							VALUES(
-								   '{$uinfo['id']}',
-								   '2047',
-								   '1',
-								   '1',
-								   1,
-								   unix_timestamp(),
-								   0
-								  );
-						  ");
+			if (!$_pm['mysql']->query("INSERT INTO player_ext(uid,bbshow,new_guide_step) VALUES({$uinfo['id']},5,-1)"))
+			{
+				die('注册失败：玩家扩展数据创建失败。');
+			}
+			if (!grantNewPlayerRewards($_pm['mysql'], $uinfo['id']))
+			{
+				die('注册失败：新手奖励发放失败。');
 			}
 			$_pm['mysql'] -> query("INSERT INTO `lock`(uid,lockvalue) values({$uinfo['id']},0)");
 

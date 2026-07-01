@@ -40,7 +40,7 @@ class guild
 			{
 				continue;
 			}
-			if($week == $bv['days'] && ($hourM >= $bv['starttime'] && $hourM < $bv['endtime'])){//战场已经开始
+			if(isWeeklyDayTimeActive($bv['days'], $bv['starttime'], $bv['endtime'], $week, $hourM, false)){//战场已经开始
 				return true;
 			}
 		}

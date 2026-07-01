@@ -68,22 +68,6 @@ if($arr['exp_got_step']<$ms)
 	}
 	
 	$user = $_pm['user']->getUserById($_SESSION['id']);
-	$totalget = 0;
-	foreach($getPrize as $k=>$v)
-	{
-		$totalget += $v;
-	}
-	if ($totalget >= $user['maxbag']){
-		msg('您的背包空间不足，请整理后再来领取(1)！');
-		die();
-	}
-	$resbag = $_pm['mysql']->getOneRecord("SELECT count(*) sl FROM userbag WHERE uid = '".$_SESSION['id']."' AND sums > 0 AND zbing = 0");
-
-	if($resbag['sl']+3 >= $user['maxbag'])
-	{
-		msg('您的背包空间不足，请整理后再来领取(3)！');
-		die();
-	}
 	$props = $_pm['mem']->get('db_propsid');
 	if(!is_array($props)) $props=unserialize($props);
 	if(!is_array($props))
@@ -97,14 +81,17 @@ if($arr['exp_got_step']<$ms)
 	{
 		$rtn=$task->saveGetPropsMore($k,$v);
 		
-		if($rtn==='200')
+		if($rtn !== true)
 		{
 			$_pm['mysql']->query("rollback");		
-			msg('您的背包空间不足，请整理后再来领取(2)！');
+			msg($rtn === '200' ? '您的背包空间不足，请整理后再来领取！' : '奖励发放失败，请稍候再试！');
 		}
 		$prizeWord.=$props[$k]['name'].' '.$v.'个，';
 	}
-	$_pm['mysql']->query('update player_ext set exp_got_step='.($arr['exp_got_step']+1).' where uid='.$_SESSION['id']);
+	if(!$_pm['mysql']->query('update player_ext set exp_got_step='.($arr['exp_got_step']+1).' where uid='.$_SESSION['id'].' and exp_got_step='.$arr['exp_got_step']) || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+		$_pm['mysql']->query('ROLLBACK');
+		msg('在线奖励状态保存失败，请稍候再试！');
+	}
 	if($arr['exp_got_step']==4)
 	{
 		msg("<!--OK-->恭喜，您得到了今天最后大奖".$prizeWord."，今日在线奖励已全部发放，祝您游戏愉快！");

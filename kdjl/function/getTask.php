@@ -43,7 +43,20 @@ $memtask = unserialize($_pm['mem']->get(MEM_TASK_KEY));
 $n = intval($_REQUEST['n']);
 $s = intval($_REQUEST['s']);
 $tsk = new task();
-$type = $_REQUEST['type'];
+$type = isset($_REQUEST['type']) ? $_REQUEST['type'] : '';
+$taskLocked = false;
+if(in_array($type,array('get','off','complate'))){
+	require_once('../sec/dblock_fun.php');
+	$a = getLock(intval($_SESSION['id']));
+	if(!is_array($a)){
+		realseLock();
+		die('服务器繁忙，请稍候操作！');
+	}
+	$taskLocked = true;
+	$user = $_pm['user']->getUserById($_SESSION['id']);
+	$bag = $_pm['user']->getUserBagById($_SESSION['id']);
+	$petsAll = $_pm['user']->getUserPetById($_SESSION['id']);
+}
 
 if($type == "get")//接受任务
 {
@@ -57,6 +70,7 @@ if($type == "get")//接受任务
 										  ));*/
 	$taskinfo = $memtask[$taskid];
 	if(!is_array($taskinfo)) die("数据错误！");
+	if(!taskScheduleIsActive($taskinfo)) die("对不起，该任务当前不在开放时间内！");
 	if(empty($taskinfo['fromnpc'])){
 		die('数据错误！');
 	}
@@ -234,8 +248,8 @@ if($type == "get")//接受任务
 						
 					case "cishu":
 						//cishu:X:Y 次数限制判断：如果该任务在Y天已经完成了X次，则无法完成任务
-						$time = time() - $limitarrs[2] * 24 * 3600;
-						$sql = "SELECT count(*) sl FROM tasklog WHERE uid = {$_SESSION['id']} and taskid = {$taskid} and time > ".strtotime(date('Ymd',time()));
+						$time = strtotime(date('Ymd',time())) - (max(1,intval($limitarrs[2])) - 1) * 24 * 3600;
+						$sql = "SELECT count(*) sl FROM tasklog WHERE uid = {$_SESSION['id']} and taskid = {$taskid} and time > {$time}";
 						$arr = $_pm['mysql'] -> getOneRecord($sql);
 						if(is_array($arr))
 						{
@@ -270,7 +284,6 @@ if($type == "get")//接受任务
 							if($pv['id'] == $user['mbid'])
 							{
 								$bname = $pv['name'];
-								$comselfbid = $pv['id'];
 							}
 						}
 						$bnamearr = array();
@@ -344,8 +357,7 @@ if($type == "get")//接受任务
 		}
 	}
 	
-	$arr = $_pm['mysql'] -> getOneRecord($sql);
-	$arr1=explode(',',$arr['okneed']);
+	$arr1=explode(',',$taskinfo['okneed']);
 	for($i=0;$i<count($arr1);$i++){
 		$arr2[$i]=explode(':',$arr1[$i]);
 		if($arr2[$i][0]=='zx'){
@@ -360,14 +372,11 @@ if($type == "get")//接受任务
 	
 	//$sql = "UPDATE player SET task = {$taskid},tasklog='' WHERE id = {$_SESSION['id']}";
 	$sql = "INSERT INTO task_accept (uid,taskid,time) VALUES ({$_SESSION['id']},$taskid,".time().")";
-	$_pm['mysql'] -> query($sql);
-	echo "恭喜您，成功接受此任务！";
-	//记录不能切换主宠的任务:
-	if(strpos($taskinfo['okneed'],",no:1"))
-	{
-		//$_pm['mysql'] -> query("INSERT INTO tasklog (taskid,uid,xulie,time,fromnpc) VALUES (9999,{$_SESSION['id']},0,0,0)");
-		$_pm['mysql'] -> query("UPDATE task_accept SET comself = $comselfbid WHERE uid = {$_SESSION['id']} AND taskid = $taskid");
+	if(!$_pm['mysql'] -> query($sql) || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+		$_pm['mysql']->query('ROLLBACK');
+		die('接受任务失败，请稍候再试！');
 	}
+	echo "恭喜您，成功接受此任务！";
 }
 
 else if($type == 'off')
@@ -394,18 +403,18 @@ else if($type == 'off')
 	
 	//$sql = "UPDATE player SET task = '',tasklog = '' WHERE id = {$_SESSION['id']}";
 	$sql = "DELETE FROM task_accept WHERE uid = {$_SESSION['id']} AND taskid = $taskid";
-	$_pm['mysql'] -> query($sql);
+	if(!$_pm['mysql'] -> query($sql) || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+		$_pm['mysql']->query('ROLLBACK');
+		die('放弃任务失败，请稍候再试！');
+	}
+	realseLock();
+	$taskLocked = false;
 	die("放弃成功！");
 }
 else if($type == "complate")
 {
-	require_once('../sec/dblock_fun.php');
-	$a = getLock($_SESSION['id']);
-	if(!is_array($a)){
-		realseLock();
-		die('服务器繁忙，请稍候操作！');
-	}
 	$taskid = intval($_REQUEST['taskid']);
+	$flag = 0;
 	$usertaskarr = $_pm['mysql'] -> getRecords("SELECT taskid,state FROM task_accept WHERE uid = {$_SESSION['id']}");
 	if(is_array($usertaskarr)){
 		foreach($usertaskarr as $v){
@@ -416,14 +425,22 @@ else if($type == "complate")
 				$flag = 1;
 			}
 		}
-		if($flag != 1){
-			realseLock();
-			die("您没有接受此任务！");
-		}
+	}
+	if($flag != 1){
+		realseLock();
+		die("您没有接受此任务！");
 	}
 	
 	
 	$taskinfo = $memtask[$taskid];
+	if(!is_array($taskinfo)){
+		realseLock();
+		die('任务配置不存在！');
+	}
+	if(!taskScheduleIsActive($taskinfo)){
+		realseLock();
+		die('对不起，该任务当前不在开放时间内，只能放弃！');
+	}
 	//条件判断								  
 	if(!empty($taskinfo['limitlv']))
 	{
@@ -490,8 +507,8 @@ else if($type == "complate")
 						break;
 					case "cishu":
 						//cishu:X:Y 次数限制判断：如果该任务在Y天已经完成了X次，则无法完成任务
-						$time = time() - $limitarrs[2] * 24 * 3600;
-						$sql = "SELECT taskid FROM tasklog WHERE uid = {$_SESSION['id']} and taskid = {$taskid} and tasktime > {$time}";
+						$time = strtotime(date('Ymd',time())) - (max(1,intval($limitarrs[2])) - 1) * 24 * 3600;
+						$sql = "SELECT taskid FROM tasklog WHERE uid = {$_SESSION['id']} and taskid = {$taskid} and time > {$time}";
 						$arr = $_pm['mysql'] -> getRecords($sql);
 						if(is_array($arr))
 						{
@@ -590,6 +607,8 @@ else if($type == "complate")
 		$tsk->startTask($user, $s);
 	}
 }
-realseLock();
+if($taskLocked){
+	realseLock();
+}
 $_pm['mem']->memClose();
 ?>

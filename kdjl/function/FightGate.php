@@ -899,31 +899,24 @@ if($rs['s_uhp']<0||$rs['s_ump']<0){
 		$prpid = getProps($gs['droplist']);
 
 		//规定时间内，特殊物品掉落
-		$date = date("w");
+		$date = date("N");
+		$hm = date("H:i");
+		$activityDropOpen = false;
 		$battletimearr = unserialize($_pm['mem']->get(MEM_TIME_KEY));
-		foreach($battletimearr as $v)
+		if(is_array($battletimearr))
 		{
-			if($v['titles'] == 'gpc')
+			foreach($battletimearr as $v)
 			{
-				$weekarr[$v['days']]['start'] = $v['starttime'];
-				$weekarr[$v['days']]['end'] = $v['endtime'];
-				$weeks[] = $v['days'];
+				if($v['titles'] == 'gpc' && isWeeklyDayTimeActive($v['days'], $v['starttime'], $v['endtime'], $date, $hm))
+				{
+					$activityDropOpen = true;
+					break;
+				}
 			}
 		}
-		if(in_array($date,$weeks))
+		if($activityDropOpen && !empty($gs['activedroplist']))
 		{
-			$hm = date("H:i");
-			if($hm >= $weekarr[$date]['start'] && $hm <= $weekarr[$date]['end'])
-			{
-				if(!empty($gs['activedroplist']))
-				{
-					$prpid = getProps($gs['activedroplist']);
-				}
-				if(!empty($activeprpid))
-				{
-					$prpid .= ",".$activeprpid;
-				}
-			}
+			$prpid = getProps($gs['activedroplist']);
 		}
 		//$mempropsid = unserialize($_pm['mem']->get('db_propsid'));
 		$okidlist = '';

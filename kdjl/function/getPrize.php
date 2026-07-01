@@ -24,13 +24,20 @@ if($_GET['type'] == 1){
 			$task = new task();
 			foreach($row as $rv){
 				$res = explode(':',$rv);
-				$task->saveGetPropsMore($res[0],$res[1]);
+				$giveResult = $task->saveGetPropsMore($res[0],$res[1]);
+				if($giveResult !== true){
+					$_pm['mysql']->query('ROLLBACK');
+					msg($giveResult === '200' ? '背包空间不足，请整理后再领取！' : '每日奖励发放失败，请稍候再试！');
+				}
 				$s.=','.$mempropsid[$res[0]]['name'].'x'.$res[1];
 			}
 			$s = substr($s,1);
 			
 			$newstr = $now.'|'.$uarr[1].'|'.$uarr[2];
-			$_pm['mysql']->query("UPDATE player_ext SET prize_every_day = '$newstr' WHERE uid = ".$_SESSION['id']);
+			if(!$_pm['mysql']->query("UPDATE player_ext SET prize_every_day = '$newstr' WHERE uid = ".$_SESSION['id']) || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+				$_pm['mysql']->query('ROLLBACK');
+				msg('每日奖励状态保存失败，请稍候再试！');
+			}
 			msg('每日奖励领取成功，获得'.$s);
 		}else{
 			msg('已经领取');
@@ -65,13 +72,20 @@ if($_GET['type'] == 1){
 		$task = new task();
 		foreach($row as $rv){
 			$res = explode(':',$rv);
-			$task->saveGetPropsMore($res[0],$res[1]);
+			$giveResult = $task->saveGetPropsMore($res[0],$res[1]);
+			if($giveResult !== true){
+				$_pm['mysql']->query('ROLLBACK');
+				msg($giveResult === '200' ? '背包空间不足，请整理后再领取！' : '周末奖励发放失败，请稍候再试！');
+			}
 			$s.=','.$mempropsid[$res[0]]['name'].'x'.$res[1];
 		}
 		$s = substr($s,1);
 		
 		$newstr = $uarr[0].'|'.$now.'|'.$uarr[2];
-		$_pm['mysql']->query("UPDATE player_ext SET prize_every_day = '$newstr' WHERE uid = ".$_SESSION['id']);
+		if(!$_pm['mysql']->query("UPDATE player_ext SET prize_every_day = '$newstr' WHERE uid = ".$_SESSION['id']) || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+			$_pm['mysql']->query('ROLLBACK');
+			msg('周末奖励状态保存失败，请稍候再试！');
+		}
 		msg('周末奖励领取成功，获得'.$s);
 	}
 }else if($_GET['type'] == 3){
@@ -101,12 +115,19 @@ if($_GET['type'] == 1){
 		$task=new task();
 		foreach($rs as $rv){
 			$res = explode('*',$rv);
-			$task->saveGetPropsMore($res[0],$res[1]);
+			$giveResult = $task->saveGetPropsMore($res[0],$res[1]);
+			if($giveResult !== true){
+				$_pm['mysql']->query('ROLLBACK');
+				msg($giveResult === '200' ? '背包空间不足，请整理后再领取！' : '节日奖励发放失败，请稍候再试！');
+			}
 			$s.=','.$mempropsid[$res[0]]['name'].'x'.$res[1];
 		}
 		$holidayprizestr = substr($holidayprizestr,6);
 		$newstr = $uarr[0].'|'.$uarr[1].'|'.$now;
-		$_pm['mysql']->query("UPDATE player_ext SET prize_every_day = '$newstr' WHERE uid = ".$_SESSION['id']);
+		if(!$_pm['mysql']->query("UPDATE player_ext SET prize_every_day = '$newstr' WHERE uid = ".$_SESSION['id']) || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+			$_pm['mysql']->query('ROLLBACK');
+			msg('节日奖励状态保存失败，请稍候再试！');
+		}
 		$s=substr($s,1);
 		msg('节假日奖励领取成功，获得'.$s);
 	}

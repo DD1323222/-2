@@ -111,7 +111,11 @@ foreach( $props as $info )
 				break;
 			}
 		}
-		$_pm['mysql'] -> query(" DELETE FROM userbag WHERE id = '".$fj_prop."' AND uid = '".$_SESSION['id']."'");
+		$equipmentDeleted = $_pm['mysql'] -> query("DELETE FROM userbag WHERE id='".$fj_prop."' AND uid='".$_SESSION['id']."'");
+		if(!$equipmentDeleted || mysql_affected_rows($_pm['mysql']->getConn()) != 1){
+			$_pm['mysql']->query('ROLLBACK');
+			die('illegal');
+		}
 		$time = time();
 		if( !isset($get_item_type) )	//fail
 		{
@@ -125,11 +129,15 @@ foreach( $props as $info )
 			$num_result = rand($num[0],$num[1]);
 			//database deal
 			$massage = "装备分解:失去物品id:".$fj_prop.",物品名称:".$info['name'].",得到物品:".$get_item_type.",得到数量:".$num_result;
-			$_pm['mysql'] -> query(" INSERT INTO gamelog (ptime,buyer,seller,pnote,vary) VALUES($time,'".$_SESSION['id']."','".$_SESSION['id']."','".$massage."','22')");
 			$user = $_pm['user']->getUserById($_SESSION['id']);
 			$bag  = $_pm['user']->getUserBagById($_SESSION['id']);
 			$get_gem = new task;
-			$get_gem->saveGetPropsMore($get_item_type,$num_result);
+			$giveResult = $get_gem->saveGetPropsMore($get_item_type,$num_result);
+			if($giveResult !== true){
+				$_pm['mysql']->query('ROLLBACK');
+				die($giveResult === '200' ? 'bagfull' : 'busy');
+			}
+			$_pm['mysql'] -> query(" INSERT INTO gamelog (ptime,buyer,seller,pnote,vary) VALUES($time,'".$_SESSION['id']."','".$_SESSION['id']."','".$massage."','22')");
 			
 		}
 		break;

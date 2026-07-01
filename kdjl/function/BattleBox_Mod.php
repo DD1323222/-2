@@ -21,7 +21,7 @@ foreach($battletimearr as $bv)
 	{
 		continue;
 	}
-	if(($week == $bv['days'] && $hourM >= $bv['endtime']) || battle_end() === true) // 战场时间结束，更新战场关闭标记。开始更新排名及相关数据，用于玩家领取奖励。
+	if(isWeeklyDayTimeFinished($bv['days'], $bv['endtime'], $week, $hourM, true) || battle_end() === true) // 战场时间结束，更新战场关闭标记。开始更新排名及相关数据，用于玩家领取奖励。
 	{
 		// 根据当前剩余的HP进行判断谁成功或失败。
 		$checkstr = 1;

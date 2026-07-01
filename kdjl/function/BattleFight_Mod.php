@@ -51,7 +51,7 @@ foreach($battletimearr as $bv)
 	{
 		continue;
 	}
-	if($week == $bv['days'] && $hourM >= $bv['starttime'] && $hourM <= $bv['endtime'])
+	if(isWeeklyDayTimeActive($bv['days'], $bv['starttime'], $bv['endtime'], $week, $hourM))
 	{
 		$checkstr = 1;
 	}

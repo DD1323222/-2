@@ -158,11 +158,15 @@ function checkGuildFightEnd()
 		//if($bv['days']!=0&&$week==0) $week=7;
 		if(isset($_GET['manual']))
 		{
-			if($week==0) $week=7;
-			if($bv['days']==0) $bv['days']=7;			
-			calcGuildFight(date('Ym').(intval(date('d'))-($week+7-$bv['days'])));
+			$recentDay = weeklyMostRecentDay($bv['days'], $week);
+			if($recentDay !== false)
+			{
+				$daysAgo = $week - $recentDay;
+				if($daysAgo < 0) $daysAgo += 7;
+				calcGuildFight(date('Ymd', time() - $daysAgo * 86400));
+			}
 		}
-		else if($week == $bv['days'] && $hourM > $bv['endtime'])//家族战结束了
+		else if(isWeeklyDayTimeFinished($bv['days'], $bv['endtime'], $week, $hourM))//家族战结束了
 		{			
 			calcGuildFight();
 		}

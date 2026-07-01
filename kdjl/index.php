@@ -132,19 +132,7 @@ if(!isset($_SESSION['nicknamegb']))
 	$_SESSION['nicknamegb'] = $_SESSION['nickname'];
 }
 
-$gjs='';
-
-$arr = $_pm['mysql'] -> getOneRecord("select new_guide_step,last_logintime,onlinetime_today,last_online_day,last_onlinetime,onlinetime from player_ext where uid=".$_SESSION['id']);
-if(is_array($arr)&&$arr['new_guide_step']!=-1&&$arr['new_guide_step']<20)
-{
-	$gjs='
-	<script language="javascript">
-	new_guide_step_db='.$arr['new_guide_step'].';
-	</script>
-	<script language="javascript" src="/javascript/newguide.js?v='.filemtime(dirname(__FILE__).'/javascript/newguide.js').'"></script>
-	';
-}
-
+$arr = $_pm['mysql'] -> getOneRecord("select last_logintime,onlinetime_today,last_online_day,last_onlinetime,onlinetime from player_ext where uid=".$_SESSION['id']);
 $tdStr=date('Ymd');
 if($arr['last_online_day']!=$tdStr)
 {
@@ -1416,14 +1404,6 @@ break;
   </div>
 </div>
 
-<div id="new_guide_div" style="position:absolute;top:0px;left:0px;z-index:29998;width:1000px;height:620px; display:none; BACKGROUND-COLOR: #ffffff;filter: alpha(opacity=1); opacity:0.01"></div>
-<div id="guide_click" style="z-index:30000;position:absolute; left:0px; top:0px; display:none"></div>
-<div id="guide_girl" style="z-index:30000;position:absolute;left:356px;top:200px; width:492px; height:308px; background-image:url(new_images/ui/guide_girl.gif); background-repeat:no-repeat; display:none">
-  <div id="guide_text" style="display:none;width:200px;left:158px;top:104px;z-index:30000;position:absolute;cursor:pointer;"></div>
-  <div id="guide_a" title="跳过新手引导" style="width:86px;left:405px;height:72px;top:150px;z-index:30001;position:absolute;cursor:pointer;background:#fff;filter:alpha(opacity=0);opacity:0;" onclick="return do_over(event);"></div>
-  <div id="guide_next" title="下一步" style="width:66px;left:391px;height:63px;top:217px;z-index:30002;position:absolute;cursor:pointer;background:#fff;filter:alpha(opacity=0);opacity:0;" onclick="return doclick(event);"></div>
-</div>
-
 <div id="frienlist" style="position:absolute;width:120px; padding:6px; height:165px;z-index:1;left: 1007px;top: 436px; background-repeat:no-repeat; overflow:hidden;display:none; background-image:url(new_images/ui/friend_blacklist_m.gif)">
   <div id="frienlisthandle" style="cursor:move; width:89px; height:21px; float: left; color:#FFFFFF">好友和黑名单<span onclick="if(checkTF(1)){blacklist();}" style="cursor:pointer; font-weight:bold; text-decoration:underline">&gt;&gt;</span></div>
   <div onclick="$('frienlist').style.display='none';" style="cursor: pointer; position: relative; float: right; width: 15px; margin-right: 7px; height: 17px;"></div>
@@ -1674,4 +1654,3 @@ async function callUsedTimesAnyNums() {
     }
 } 
 </script>
-<?php echo 	$gjs ?>

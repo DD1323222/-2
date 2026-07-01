@@ -95,16 +95,6 @@ if(empty($getPrize))
 	msg('后台奖品设置不对, 没有给成长为:'.$_bb['czl'].'的设定奖品！');
 }
 
-$totalget = 0;
-foreach($getPrize as $k=>$v)
-{
-	$totalget += $v;
-}
-
-if ($totalget >= $user['maxbag']){
-	msg('您的背包空间不足，请整理后再来领取(需要约:'.$totalget.')！');
-}
-
 $props = $_pm['mem']->get('db_propsid');
 if(!is_array($props)) $props=unserialize($props);
 if(!is_array($props))
@@ -117,10 +107,10 @@ $prizeWord='';
 foreach($getPrize as $k=>$v)
 {
 	$rtn=$task->saveGetPropsMore($k,$v);
-	if($rtn==='200')
+	if($rtn !== true)
 	{
 		$_pm['mysql']->query("rollback");		
-		msg('您的背包空间不足，请整理后再来领取(2)！');
+		msg($rtn === '200' ? '您的背包空间不足，请整理后再来领取！' : '奖励发放失败，请稍候再试！');
 	}
 	$prizeWord.=$props[$k]['name'].' '.$v.'个，';
 }

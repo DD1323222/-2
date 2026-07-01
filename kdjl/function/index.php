@@ -740,7 +740,6 @@ function checkTF(){
 }
 </script>
 <body onkeydown="KeyDown(event);" onLoad="loadads()">
-<div id="new_guide_div" style="position:absolute;top:0;left:0;z-index:29998;width:1000px;height:620px; display:none"></div>
 <div id="sysstatmsgs" style="position:absolute;width:344px;height:18px;z-index:10002;left: 340px;top: 548px;	opacity: 0.6; filter : progid:DXImageTransform.Microsoft.Alpha(style=0,opacity=60,finishOpacity=100); display:none"> </div>
 <div id="chatflash"  style="display:none1; z-index:0; left:515px; top:500px; position:absolute; width:1px; height:1px; overflow:hidden" >
   <object classid="clsid:D27CDB6E-AE6D-11cf-96B8-444553540000"
@@ -1115,12 +1114,6 @@ left: 0; scrolling: no;" frameborder="0" src="aa.html" allowtransparency="true">
       </tr>
     </table>
   </div>
-</div>
-<div id="guide_click" style="border:1px solid #ff0000;z-index:30000;position:absolute"></div>
-<div id="guide_girl" style="border:1px solid #ff0000;z-index:30000;position:absolute;left:356px;top:145px; width:492px; height:308px; background-image:url(../new_images/ui/guide_girl.gif); background-repeat:no-repeat; display:">
-  <div id="guide_text" style="display:none;width:200px;border:1px solid #ff0000;left:158px;top:104px;z-index:30000;position:absolute; cursor:pointer;"> <span style="cursor:pointer;" onclick="$('gw').src='/function/City_Mod.php';doguide();">欢迎来到口袋精灵世界，我是精灵使者“小熊”。下面跟着我一起熟悉一下口袋吧，你会获得丰厚的奖励哦！点击进入城镇</span>  </div>
-  <div id="guide_a" style="width:72px;border:1px solid #ff0000;left:417px; height:66px;top:154px;z-index:30000;position:absolute; cursor:pointer;" onclick="do_over()"></div>
-  <div id="guide_next" style=";width:58px;border:1px solid #ff0000;left:394px; height:49px;top:227px;z-index:30000;position:absolute; cursor:pointer;"></div>
 </div>
 </body>
 </html>

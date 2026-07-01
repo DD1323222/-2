@@ -22,7 +22,7 @@ class multiMonster{
 		$this->cleanup();
 	}	
 	private function cleanup(){
-		$sql = 'delete from '.$this->table_name.' where date_add(`time`,INTERVAL '.$this->expire_time.' SECOND)<CURRENT_TIMESTAMP()';
+		$sql = 'delete from '.$this->table_name.' where befall_time > 0 and (befall_time + '.$this->expire_time.') < UNIX_TIMESTAMP()';
 		if(!$this->execute($sql)){
 			$this->initTable();
 		}
@@ -36,7 +36,7 @@ class multiMonster{
 	public function finish(){
 		$sql = 'select props_got,befall_time from '.$this->table_name.' where uid='.$this->uid;
 		$propsRs= $this->getRow($sql);
-		if($propsRs['time']+900<time) return array("","");//某种错误，因为玩家是15分钟前遇到的怪，这几乎是不可能的
+		if(!is_array($propsRs) || intval($propsRs['befall_time']) + $this->expire_time < time()) return array("","");//某种错误，因为玩家是15分钟前遇到的怪，这几乎是不可能的
 
 		$propsStr = explode('#|#',$propsRs['props_got']);
 		$rtn = array("","",0,0);

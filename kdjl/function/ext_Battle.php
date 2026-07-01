@@ -221,7 +221,7 @@ function usePropsOfBattle($n)
 				{
 					continue;
 				}
-				if($selfField['hp'] != 0 && $week == $bv['days'] && $hourM >= $bv['starttime'] && $hourM <= $bv['endtime'])
+				if($selfField['hp'] != 0 && isWeeklyDayTimeActive($bv['days'], $bv['starttime'], $bv['endtime'], $week, $hourM))
 				{
 					$checkstr = 1;
 					break;
@@ -462,20 +462,20 @@ function getBattleProps($n)
 				$tsk = new task();
 				
 				$res = $tsk->saveGetPropsMore($pid,$num);
-				if($res === "200")
+				if($res !== true)
 				{
-					realseLock();
+					$_pm['mysql']->query('ROLLBACK');
 					unLockItem(1);
-					die("您的背包已满，请您整理自己的背包。");
+					die($res === '200' ? "您的背包已满，请您整理自己的背包。" : '道具发放失败，请稍候再试！');
 				}
 				// 减少用户军功
-				$_pm['mysql']->query("UPDATE battlefield_user
+				$battlePaid = $_pm['mysql']->query("UPDATE battlefield_user
 										 SET jgvalue=jgvalue-{$need}
 									   WHERE uid={$_SESSION['id']} AND jgvalue >= $need
 									 ");
 				$result = mysql_affected_rows($_pm['mysql'] -> getConn());
-				if($result != 1){
-					realseLock();
+				if(!$battlePaid || $result != 1){
+					$_pm['mysql']->query('ROLLBACK');
 					unLockItem(1);
 					die('军功不足！');
 				}
